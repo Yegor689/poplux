@@ -1,9 +1,10 @@
 import math
+import random
 import pygame
 import pygame.gfxdraw
 from settings import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, BALL_COLORS, BG_COLOR, PATH_COLOR,
-    FROG_COLOR, HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
+    SCREEN_WIDTH, SCREEN_HEIGHT, BALL_COLORS, BG_COLOR,
+    HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
 )
 
 
@@ -14,9 +15,63 @@ class Renderer:
         self.font_med = pygame.font.SysFont(None, 36)
         self.font_small = pygame.font.SysFont(None, 28)
         self.font_score = pygame.font.SysFont(None, 48, bold=True)
+        self._bg_surface = self._render_starfield()
+        self._palettes = self._build_palettes()
+
+    @staticmethod
+    def _render_starfield() -> pygame.Surface:
+        """Pre-render the starfield background to a surface (called once)."""
+        surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        surf.fill((4, 4, 14))
+        rng = random.Random(42)
+        for _ in range(260):
+            x = rng.randint(0, SCREEN_WIDTH)
+            y = rng.randint(0, SCREEN_HEIGHT)
+            kind = rng.choices(['dim', 'mid', 'bright'], weights=[55, 35, 10])[0]
+            if kind == 'dim':
+                r, brightness = 1, rng.randint(80, 160)
+            elif kind == 'mid':
+                r, brightness = 2, rng.randint(160, 210)
+            else:
+                r, brightness = 3, rng.randint(220, 255)
+            tint = rng.choice([(10, 10, 40), (0, 0, 0), (30, 20, 0)])
+            col = tuple(min(255, brightness + t) for t in tint)
+            spike = kind == 'bright'
+            if r == 1:
+                surf.set_at((x, y), col)
+            else:
+                Renderer._aa_circle(surf, col, (x, y), r)
+            if spike:
+                dim = tuple(c // 3 for c in col)
+                pygame.draw.line(surf, dim, (x - 6, y), (x + 6, y), 1)
+                pygame.draw.line(surf, dim, (x, y - 6), (x, y + 6), 1)
+        return surf
+
+    @staticmethod
+    def _build_palettes() -> dict:
+        """Pre-compute colour palettes for each ball colour."""
+        palettes = {}
+        for name, color in BALL_COLORS.items():
+            palettes[name] = (
+                color,
+                tuple(max(0,   c - 70) for c in color),
+                tuple(min(255, c + 30) for c in color),
+                tuple(min(255, c + 80) for c in color),
+                tuple(max(0,   c - 55) for c in color),
+            )
+        # fallback for unknown colours
+        fallback = (200, 200, 200)
+        palettes[None] = (
+            fallback,
+            tuple(max(0,   c - 70) for c in fallback),
+            tuple(min(255, c + 30) for c in fallback),
+            tuple(min(255, c + 80) for c in fallback),
+            tuple(max(0,   c - 55) for c in fallback),
+        )
+        return palettes
 
     def clear(self) -> None:
-        self.screen.fill(BG_COLOR)
+        self.screen.blit(self._bg_surface, (0, 0))
 
     @staticmethod
     def _aa_circle(surface: pygame.Surface, color: tuple, pos: tuple, radius: int) -> None:
@@ -38,16 +93,10 @@ class Renderer:
         self._aa_circle(self.screen, HOLE_COLOR, (int(hole_x), int(hole_y)), BALL_RADIUS + 4)
         pygame.gfxdraw.aacircle(self.screen, int(hole_x), int(hole_y), BALL_RADIUS + 4, (150, 50, 50))
 
-    def _ball_color(self, color_name: str) -> tuple:
-        return BALL_COLORS.get(color_name, (200, 200, 200))
-
     def _draw_ball(self, surface: pygame.Surface, color_name: str, cx: int, cy: int, radius: int,
                    spin_angle: float = 0.0, tangent: float = 0.0) -> None:
-        color = self._ball_color(color_name)
-        dark  = tuple(max(0,   c - 70) for c in color)
-        mid   = tuple(min(255, c + 30) for c in color)
-        light = tuple(min(255, c + 80) for c in color)
-        seam  = tuple(max(0,   c - 55) for c in color)
+        palette = self._palettes.get(color_name) or self._palettes[None]
+        color, dark, mid, light, seam = palette
 
         self._aa_circle(surface, dark,  (cx, cy), radius)                                             # dark rim
         self._aa_circle(surface, color, (cx, cy), int(radius * 0.88))                                 # base colour
@@ -109,58 +158,101 @@ class Renderer:
     def draw_frog(self, frog) -> None:
         cx = int(frog.x - math.cos(frog.angle) * frog.recoil)
         cy = int(frog.y - math.sin(frog.angle) * frog.recoil)
-        angle  = frog.angle
-        perp   = angle + math.pi / 2
-        R = BALL_RADIUS * 2  # body radius
+        angle = frog.angle
+        R = BALL_RADIUS
 
-        # --- Feet (drawn behind body) ---
-        foot_angles = [angle + math.pi * 0.55, angle - math.pi * 0.55,
-                       angle + math.pi * 0.85, angle - math.pi * 0.85]
-        for fa in foot_angles:
-            fx = cx + int(math.cos(fa) * R * 0.95)
-            fy = cy + int(math.sin(fa) * R * 0.95)
-            self._aa_circle(self.screen, (20, 100, 50), (fx, fy), 9)
-            self._aa_circle(self.screen, (30, 140, 70), (fx, fy), 7)
+        fc, fs = math.cos(angle), math.sin(angle)
+        pc, ps = -math.sin(angle), math.cos(angle)
 
-        # --- Body layers ---
-        self._aa_circle(self.screen, (18, 100, 52),  (cx, cy), R + 2)      # dark rim / shadow
-        self._aa_circle(self.screen, (39, 174, 96),  (cx, cy), R)           # main body
-        # Underbelly — lighter oval toward the front
-        bx = cx + int(math.cos(angle) * 5)
-        by = cy + int(math.sin(angle) * 5)
-        self._aa_circle(self.screen, (140, 215, 155), (bx, by), R // 2)
-        # Sheen highlight — top-left of body
-        hx = cx + int(math.cos(angle - 2.4) * (R * 0.45))
-        hy = cy + int(math.sin(angle - 2.4) * (R * 0.45))
-        self._aa_circle(self.screen, (90, 210, 130), (hx, hy), R // 3)
+        def pt(fwd, perp):
+            return (int(cx + fc * fwd + pc * perp),
+                    int(cy + fs * fwd + ps * perp))
 
-        # --- Nostrils ---
-        for side in (-1, 1):
-            nx2 = cx + int(math.cos(angle) * (R * 0.65) + math.cos(perp) * side * 5)
-            ny2 = cy + int(math.sin(angle) * (R * 0.65) + math.sin(perp) * side * 5)
-            self._aa_circle(self.screen, (18, 100, 52), (nx2, ny2), 2)
+        HULL  = (32, 36, 44)    # dark gunmetal
+        PANEL = (44, 50, 62)    # lighter panel
+        SPINE = (58, 66, 82)    # spine highlight
+        AMBER = (220, 155, 25)  # amber accent
+        AMBER2= (140,  95, 10)  # dark amber
+        EDGE  = (80,  92, 115)  # hull edge aa
 
-        # --- Eyes (bulging on stalks) ---
-        for side in (-1, 1):
-            ex = cx + int(math.cos(angle) * (R * 0.35) + math.cos(perp) * side * (R * 0.65))
-            ey = cy + int(math.sin(angle) * (R * 0.35) + math.sin(perp) * side * (R * 0.65))
-            self._aa_circle(self.screen, (18, 100, 52),   (ex, ey), 9)     # stalk base
-            self._aa_circle(self.screen, (220, 210, 170), (ex, ey), 8)     # sclera
-            self._aa_circle(self.screen, (170, 130, 20),  (ex, ey), 5)     # gold iris
-            self._aa_circle(self.screen, (10,  10,  10),  (ex, ey), 3)     # pupil
-            self._aa_circle(self.screen, (255, 255, 255), (ex - 2, ey - 2), 1)  # glint
+        # --- Engine glow ---
+        for perp_off in (-R * 0.42, R * 0.42):
+            ex, ey = pt(-R * 1.1, perp_off)
+            self._aa_circle(self.screen, (255,  70,   5), (ex, ey), int(R * 0.62))
+            self._aa_circle(self.screen, (255, 170,  40), (ex, ey), int(R * 0.38))
+            self._aa_circle(self.screen, (255, 240, 180), (ex, ey), int(R * 0.18))
 
-        # --- Current ball at mouth ---
-        mouth_dist = R + BALL_RADIUS + 4
-        mx = cx + int(math.cos(angle) * mouth_dist)
-        my = cy + int(math.sin(angle) * mouth_dist)
+        # --- Swept wings (two-part: inner strake + outer panel) ---
+        for sign in (-1, 1):
+            strake = [pt(R * 0.5,  sign * R * 0.5),
+                      pt(-R * 0.2, sign * R * 0.9),
+                      pt(-R * 1.0, sign * R * 0.48)]
+            outer  = [pt(R * 0.1,  sign * R * 0.85),
+                      pt(-R * 0.4, sign * R * 1.7),
+                      pt(-R * 1.0, sign * R * 0.85),
+                      pt(-R * 0.2, sign * R * 0.9)]
+            pygame.draw.polygon(self.screen, PANEL,  strake)
+            pygame.draw.polygon(self.screen, HULL,   outer)
+            pygame.gfxdraw.aapolygon(self.screen, strake, EDGE)
+            pygame.gfxdraw.aapolygon(self.screen, outer,  EDGE)
+            # amber leading-edge trim
+            pygame.draw.aaline(self.screen, AMBER,
+                               pt(R * 0.5, sign * R * 0.5),
+                               pt(-R * 0.35, sign * R * 1.62))
+            # panel rib
+            pygame.draw.aaline(self.screen, AMBER2,
+                               pt(R * 0.0, sign * R * 0.72),
+                               pt(-R * 0.85, sign * R * 0.65))
+
+        # --- Rounded hull body ---
+        self._aa_circle(self.screen, HULL,  pt( R * 0.65, 0), int(R * 0.92))
+        self._aa_circle(self.screen, PANEL, pt( 0,         0), int(R * 1.06))
+        self._aa_circle(self.screen, HULL,  pt(-R * 0.65, 0), int(R * 0.86))
+        pygame.gfxdraw.aacircle(self.screen, *pt(0, 0), int(R * 1.06), EDGE)
+
+        # Spine stripe
+        spine_pts = [pt(R * 1.6,  R * 0.1), pt(-R * 0.8,  R * 0.1),
+                     pt(-R * 0.8, -R * 0.1), pt(R * 1.6,  -R * 0.1)]
+        pygame.draw.polygon(self.screen, SPINE, spine_pts)
+
+        # Hull panel seam lines
+        pygame.draw.aaline(self.screen, AMBER2, pt(R * 0.3,  R * 0.85), pt(-R * 0.55, R * 0.70))
+        pygame.draw.aaline(self.screen, AMBER2, pt(R * 0.3, -R * 0.85), pt(-R * 0.55, -R * 0.70))
+
+        # --- Nose cone ---
+        self._aa_circle(self.screen, SPINE,           pt(R * 1.5, 0), int(R * 0.42))
+        self._aa_circle(self.screen, (100, 115, 145), pt(R * 1.82, 0), int(R * 0.20))
+        # amber nose ring
+        pygame.gfxdraw.aacircle(self.screen, *pt(R * 1.5, 0), int(R * 0.42), AMBER)
+
+        # --- Cannon barrel ---
+        barrel = [pt(R * 1.22,  R * 0.13), pt(R * 2.5,  R * 0.09),
+                  pt(R * 2.5,  -R * 0.09), pt(R * 1.22, -R * 0.13)]
+        pygame.draw.polygon(self.screen, PANEL, barrel)
+        pygame.gfxdraw.aapolygon(self.screen, barrel, AMBER)
+
+        # --- Visor (flat viewport slit, NOT ball-shaped) ---
+        visor = [pt(R * 0.9,  R * 0.28), pt(R * 0.3,  R * 0.28),
+                 pt(R * 0.3, -R * 0.28), pt(R * 0.9, -R * 0.28)]
+        pygame.draw.polygon(self.screen, (8, 12, 22), visor)
+        # amber visor frame
+        pygame.gfxdraw.aapolygon(self.screen, visor, AMBER)
+        # cyan scan-line inside
+        pygame.draw.aaline(self.screen, (0, 200, 230),
+                           pt(R * 0.85, R * 0.05), pt(R * 0.35, R * 0.05))
+
+        # --- Amber hull accent rings ---
+        pygame.gfxdraw.aacircle(self.screen, *pt(-R * 0.3, 0), int(R * 0.3), AMBER2)
+
+        # --- Magazine bay — next ball recessed in hull ---
+        bx, by = pt(-R * 0.65, 0)
+        self._aa_circle(self.screen, (12, 14, 20), (bx, by), int(BALL_RADIUS * 0.75))
+        pygame.gfxdraw.aacircle(self.screen, bx, by, int(BALL_RADIUS * 0.75), AMBER2)
+        self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
+
+        # --- Current ball at cannon tip ---
+        mx, my = pt(R * 2.5 + BALL_RADIUS + 3, 0)
         self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
-
-        # --- Next ball behind frog (smaller) ---
-        next_dist = R + BALL_RADIUS
-        nx = cx - int(math.cos(angle) * next_dist)
-        ny = cy - int(math.sin(angle) * next_dist)
-        self._draw_ball(self.screen, frog.next_ball.color, nx, ny, int(frog.next_ball.radius * 0.7))
 
     def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False) -> None:
         # --- Score — top-left, prominent ---
@@ -210,67 +302,62 @@ class Renderer:
     # Level-select screen                                                  #
     # ------------------------------------------------------------------ #
 
-    _BTN_W = 250
-    _BTN_H = 200
-    _BTN_GAP = 40
-    _BTN_Y = 200
+    _CARD_W      = 185
+    _CARD_H      = 145
+    _CARD_GAP    = 20
+    _MAX_PER_ROW = 4
 
-    def _level_button_rects(self) -> list:
-        total_w = len(LEVELS) * self._BTN_W + (len(LEVELS) - 1) * self._BTN_GAP
-        start_x = (SCREEN_WIDTH - total_w) // 2
-        rects = []
-        for i in range(len(LEVELS)):
-            x = start_x + i * (self._BTN_W + self._BTN_GAP)
-            rects.append(pygame.Rect(x, self._BTN_Y, self._BTN_W, self._BTN_H))
-        return rects
+    def _level_card_rects(self) -> list:
+        """Return list of (rect, level_idx) for all levels in a wrapping grid."""
+        n       = len(LEVELS)
+        per_row = min(self._MAX_PER_ROW, n)
+        cards   = []
+        y       = 120
+        for row_start in range(0, n, per_row):
+            row     = list(range(row_start, min(row_start + per_row, n)))
+            total_w = len(row) * self._CARD_W + (len(row) - 1) * self._CARD_GAP
+            x       = (SCREEN_WIDTH - total_w) // 2
+            for li in row:
+                cards.append((pygame.Rect(x, y, self._CARD_W, self._CARD_H), li))
+                x += self._CARD_W + self._CARD_GAP
+            y += self._CARD_H + self._CARD_GAP
+        return cards
 
     def level_button_at(self, pos) -> "int | None":
-        for i, rect in enumerate(self._level_button_rects()):
+        for rect, li in self._level_card_rects():
             if rect.collidepoint(pos):
-                return i
+                return li
         return None
 
     def draw_level_select(self, mouse_pos) -> None:
         self.screen.fill(BG_COLOR)
 
-        # Title
         title = self.font_large.render("Select Level", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 110)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 65)))
 
-        rects = self._level_button_rects()
-        for i, (rect, cfg) in enumerate(zip(rects, LEVELS)):
+        for rect, li in self._level_card_rects():
+            cfg     = LEVELS[li]
             hovered = rect.collidepoint(mouse_pos)
-            fill = (60, 60, 80) if hovered else (40, 40, 55)
-            border = (180, 180, 220) if hovered else (100, 100, 140)
+            fill    = (60, 60, 80) if hovered else (40, 40, 55)
+            border  = (180, 180, 220) if hovered else (100, 100, 140)
 
-            pygame.draw.rect(self.screen, fill, rect, border_radius=12)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=12)
+            pygame.draw.rect(self.screen, fill,   rect, border_radius=10)
+            pygame.draw.rect(self.screen, border, rect, 2, border_radius=10)
 
-            # Level name
             name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
-            self.screen.blit(name_surf, name_surf.get_rect(
-                center=(rect.centerx, rect.y + 40)))
+            self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + 32)))
 
-            # Subtitle
-            sub_surf = self.font_small.render(cfg["subtitle"], True, (180, 180, 180))
-            self.screen.blit(sub_surf, sub_surf.get_rect(
-                center=(rect.centerx, rect.y + 80)))
+            sub_surf = self.font_small.render(cfg.get("subtitle", ""), True, (180, 180, 180))
+            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 62)))
 
-            # Balls count
-            balls_surf = self.font_small.render(
-                f"{cfg['total_balls']} balls", True, (160, 200, 160))
-            self.screen.blit(balls_surf, balls_surf.get_rect(
-                center=(rect.centerx, rect.y + 120)))
+            balls_surf = self.font_small.render(f"{cfg['total_balls']} balls", True, (160, 200, 160))
+            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 92)))
 
-            # Speed
-            speed_surf = self.font_small.render(
-                f"Speed: {int(cfg['chain_speed'])} px/s", True, (160, 160, 200))
-            self.screen.blit(speed_surf, speed_surf.get_rect(
-                center=(rect.centerx, rect.y + 155)))
+            speed_surf = self.font_small.render(f"Speed: {int(cfg['chain_speed'])} px/s", True, (160, 160, 200))
+            self.screen.blit(speed_surf, speed_surf.get_rect(center=(rect.centerx, rect.y + 116)))
 
-        # Hint
         hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
-        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, 540)))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #
     # Main menu                                                            #

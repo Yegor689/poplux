@@ -30,6 +30,9 @@ class Game:
         self.particles: list[Particle] = []
         self.spawned_count = 0
         self._total_balls = 0
+        self._cached_scale_rect = None
+        self._cached_screen_size = None
+        self._frame_mouse = (0, 0)
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -56,6 +59,7 @@ class Game:
         running = True
         while running:
             dt = self.clock.tick(FPS) / 1000.0
+            self._frame_mouse = self._logical_mouse()
             running = self._handle_events()
             if self.state in ("playing",):
                 self._update(dt)
@@ -65,13 +69,17 @@ class Game:
 
     def _scale_rect(self) -> tuple:
         """Return (scale, offset_x, offset_y, scaled_w, scaled_h) preserving aspect ratio."""
-        sw, sh = self.screen.get_size()
-        scale = min(sw / SCREEN_WIDTH, sh / SCREEN_HEIGHT)
-        scaled_w = int(SCREEN_WIDTH * scale)
-        scaled_h = int(SCREEN_HEIGHT * scale)
-        ox = (sw - scaled_w) // 2
-        oy = (sh - scaled_h) // 2
-        return scale, ox, oy, scaled_w, scaled_h
+        size = self.screen.get_size()
+        if size != self._cached_screen_size:
+            sw, sh = size
+            scale = min(sw / SCREEN_WIDTH, sh / SCREEN_HEIGHT)
+            scaled_w = int(SCREEN_WIDTH * scale)
+            scaled_h = int(SCREEN_HEIGHT * scale)
+            ox = (sw - scaled_w) // 2
+            oy = (sh - scaled_h) // 2
+            self._cached_scale_rect = (scale, ox, oy, scaled_w, scaled_h)
+            self._cached_screen_size = size
+        return self._cached_scale_rect
 
     def _logical_mouse(self) -> tuple:
         mx, my = pygame.mouse.get_pos()
@@ -81,7 +89,7 @@ class Game:
         return (max(0, min(SCREEN_WIDTH, lx)), max(0, min(SCREEN_HEIGHT, ly)))
 
     def _handle_events(self) -> bool:
-        mouse_pos = self._logical_mouse()
+        mouse_pos = self._frame_mouse
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -135,7 +143,7 @@ class Game:
                 elif self.state in ("lose", "game_complete"):
                     self.state = "main_menu"
         if self.state == "playing":
-            self.frog.update(self._logical_mouse())
+            self.frog.update(self._frame_mouse)
         return True
 
     _PARTICLE_COUNT = 10   # particles per popped ball
@@ -228,7 +236,7 @@ class Game:
             self.fired_balls.remove(b)
 
     def _render(self) -> None:
-        mouse_pos = self._logical_mouse()
+        mouse_pos = self._frame_mouse
 
         if self.state == "main_menu":
             self.renderer.draw_main_menu(mouse_pos)

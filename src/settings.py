@@ -15,28 +15,37 @@ BALL_COLORS = {
     "yellow": (241, 196, 15),
 }
 BG_COLOR = (30, 30, 30)
-PATH_COLOR = (80, 80, 80)
-FROG_COLOR = (39, 174, 96)
 HOLE_COLOR = (10, 10, 10)
 HUD_COLOR = (220, 220, 220)
 
 # Gameplay
 BALL_RADIUS = 20
 BALL_DIAMETER = BALL_RADIUS * 2
-CHAIN_SPEED = 30.0          # chain advance speed (px/sec)
 SHOOT_SPEED = 800.0         # fired ball speed (px/sec)
-TOTAL_BALLS = 50            # balls to spawn for the level
 MATCH_MINIMUM = 3           # minimum group size to pop
 MAX_SAME_IN_ROW = 2         # max consecutive same-color spawns
-PRE_PLACED_BALLS = 15       # balls placed at start before spawning begins
 
 # Path
 PATH_CENTER = (400, 300)
 PATH_NUM_POINTS = 500
 
 _levels_dir = os.path.join(os.path.dirname(__file__), "levels")
-LEVELS = [
-    json.load(open(os.path.join(_levels_dir, fname)))
-    for fname in sorted(os.listdir(_levels_dir))
-    if fname.endswith(".json")
-]
+
+def _read_levels():
+    fnames = sorted(f for f in os.listdir(_levels_dir) if f.endswith(".json"))
+    files  = [os.path.join(_levels_dir, f) for f in fnames]
+    data = []
+    for fp in files:
+        with open(fp) as f:
+            data.append(json.load(f))
+    return files, data
+
+_files, _data = _read_levels()
+LEVEL_FILES = _files   # parallel list: full path for each entry in LEVELS
+LEVELS      = _data
+
+def reload_levels():
+    """Reload from disk in-place so all existing imports stay valid."""
+    files, data = _read_levels()
+    LEVEL_FILES[:] = files
+    LEVELS[:]      = data

@@ -2,7 +2,7 @@
 
 ## 1. Game Overview
 
-A single-player 2D arcade color-matching game. A frog sits at the center of the screen, surrounded by a curved path along which a chain of colored balls advances. The player aims and shoots colored balls from the frog to match three or more of the same color, removing them from the chain. The goal is to eliminate all balls before they reach the endpoint hole.
+A single-player 2D arcade color-matching game. A ship sits at a fixed position on screen, surrounded by a curved path along which a chain of colored balls advances. The player aims and shoots colored balls from the ship to match three or more of the same color, removing them from the chain. The goal is to eliminate all balls before they reach the endpoint hole.
 
 **Framework:** Pygame
 **Language:** Python 3.10+
@@ -19,10 +19,11 @@ A single-player 2D arcade color-matching game. A frog sits at the center of the 
 - Has a **spawn point** (start) where new balls enter and an **endpoint hole** (end) where balls must not reach.
 - Balls move along this path at a constant speed toward the endpoint.
 
-### 2.2 The Frog (Shooter)
+### 2.2 The Ship (Shooter)
 - Positioned at a level-defined position (default: screen center).
 - Rotates to face the mouse cursor.
-- Holds a **current ball** (at its mouth) and a **next ball** (behind the body).
+- Visually rendered as a gunmetal hull with swept wings, a cannon barrel, an amber-accented visor slit, and twin engine glows.
+- Holds a **current ball** (at the cannon tip) and a **next ball** (recessed in the magazine bay behind the hull).
 - **Left-click:** fires the current ball; next becomes current, a new random ball is generated.
 - **Right-click:** swaps current and next ball.
 
@@ -33,7 +34,7 @@ A single-player 2D arcade color-matching game. A frog sits at the center of the 
 - When a gap opens (e.g. after a pop), the front segment reverses at high speed to close it.
 
 ### 2.4 Shooting & Insertion
-- Fired balls travel in a straight line from the frog at high speed.
+- Fired balls travel in a straight line from the ship at high speed.
 - On collision with a chain ball, the fired ball inserts into the chain at the appropriate position.
 - Neighboring balls animate outward to make room, then settle.
 - The inserted ball plays an entry animation, sliding from its fired position into its chain slot.
@@ -77,11 +78,12 @@ A single-player 2D arcade color-matching game. A frog sits at the center of the 
 | `main.py` | Entry point. Initializes Pygame and starts the game loop. |
 | `game.py` | Owns game state, orchestrates updates, handles all input and state transitions. |
 | `path.py` | Catmull-Rom spline path with arc-length parameterization. Provides position, tangent, and nearest-point queries. |
-| `frog.py` | Frog rotation, current/next ball management, firing and swapping. |
+| `frog.py` | Ship rotation, current/next ball management, firing and swapping. |
 | `chain.py` | Ordered ball list: advance, insertion, gap closing, match detection, cascade pop logic. |
 | `ball.py` | Ball data: color, path position, spin angle, insertion animation state, and fired-ball velocity. |
-| `renderer.py` | All Pygame drawing: path, chain, frog, fired balls, HUD, all menus and overlays. |
-| `settings.py` | Constants and tuning values (sizes, speeds, colors, FPS). |
+| `renderer.py` | All Pygame drawing: path, chain, ship, fired balls, HUD, all menus and overlays. Caches the starfield background and path surface to avoid redundant per-frame draw calls. |
+| `settings.py` | Constants and tuning values (sizes, speeds, colors, FPS). Loads level JSON files. |
+| `editor.py` | Interactive level editor for creating and modifying level waypoints. |
 | `levels/*.json` | Level definitions: path waypoints, frog position, chain speed, ball count, etc. |
 
 ---
@@ -104,11 +106,12 @@ A single-player 2D arcade color-matching game. A frog sits at the center of the 
 
 | Element | Description |
 |---|---|
-| **Path** | Dark gray tube drawn along waypoints with a filled endpoint hole. |
+| **Background** | Dark blue-black sky with a cached starfield of 260 procedural stars (dim, mid, bright) with diffraction spikes on the brightest ones. Rendered once and blitted each frame. |
+| **Path** | Dark gray tube drawn along waypoints with a filled endpoint hole. Cached to an off-screen surface and invalidated when the level changes. |
 | **Chain balls** | Layered circles with rim, base color, inner glow, sheen, and specular highlight. A rotating seam stripe is drawn perpendicular to the travel direction, spinning forward as the ball rolls (top-forward rolling physics). |
-| **Frog** | Multi-layer green circle body with bulging eyes, nostrils, and feet. Rotates to face mouse. Current ball shown at mouth; next ball shown smaller behind the body. |
+| **Ship** | Gunmetal hull with swept two-part wings, amber leading-edge trim, a cannon barrel, a flat visor slit with cyan scan-line, a nose cone, twin engine glows, and hull accent rings. Rotates to face mouse. Current ball shown at cannon tip; next ball shown smaller in the rear magazine bay. |
 | **Fired ball** | Same appearance as chain balls (no spin stripe). |
-| **HUD** | Level name, balls remaining on path, and balls left to spawn — top-left corner. |
+| **HUD** | Score display (top-left), timer (top-center), optional debug info with ball counts (top-right, toggle with S). |
 | **Menus / overlays** | Semi-transparent dark overlays with styled rounded-rect buttons (main menu, level select, pause, level complete). |
 
 ---
@@ -128,18 +131,22 @@ Zuma/
     ├── ball.py
     ├── chain.py
     ├── renderer.py
+    ├── editor.py
     └── levels/
         ├── level1.json
-        └── level2.json
+        ├── level2.json
+        ├── level3.json
+        └── level4.json
 ```
 
 ---
 
 ## 7. Future Considerations
 
-- Score system and combo multipliers
+- ~~Score system and combo multipliers~~ (implemented)
+- ~~Level editor~~ (implemented — `editor.py`)
 - Power-up balls (bomb, slow, wildcard)
 - Sound effects and music
-- Animated background / themed art per level
 - Difficulty scaling (chain speed increases over time)
 - Additional ball colors and larger levels
+ 
