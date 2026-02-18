@@ -13,6 +13,40 @@ from settings import (
 )
 
 
+class _Asteroid:
+    __slots__ = ('x', 'y', 'dx', 'dy', 'angle', 'spin', 'verts')
+
+    def __init__(self, x, y, dx, dy, angle, spin, verts):
+        self.x = x; self.y = y
+        self.dx = dx; self.dy = dy
+        self.angle = angle; self.spin = spin
+        self.verts = verts
+
+
+_NUM_ASTEROIDS = 20
+
+
+def _make_asteroid():
+    n = random.randint(6, 9)
+    base_r = random.uniform(4, 12)
+    verts = []
+    for i in range(n):
+        theta = 2 * math.pi * i / n + random.uniform(-0.28, 0.28)
+        r = base_r * random.uniform(0.55, 1.35)
+        verts.append((math.cos(theta) * r, math.sin(theta) * r))
+    speed = random.uniform(10, 35)
+    dir_a = random.uniform(0, 2 * math.pi)
+    return _Asteroid(
+        x=random.uniform(0, SCREEN_WIDTH),
+        y=random.uniform(0, SCREEN_HEIGHT),
+        dx=math.cos(dir_a) * speed,
+        dy=math.sin(dir_a) * speed,
+        angle=random.uniform(0, 2 * math.pi),
+        spin=random.choice([-1, 1]) * random.uniform(0.3, 1.4),
+        verts=verts,
+    )
+
+
 
 class Game:
     def __init__(self):
@@ -33,6 +67,7 @@ class Game:
         self._cached_scale_rect = None
         self._cached_screen_size = None
         self._frame_mouse = (0, 0)
+        self.asteroids = [_make_asteroid() for _ in range(_NUM_ASTEROIDS)]
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -170,8 +205,24 @@ class Game:
                     color=color, radius=self._PARTICLE_R,
                 ))
 
+    def _update_asteroids(self, dt: float) -> None:
+        margin = 15
+        for a in self.asteroids:
+            a.x += a.dx * dt
+            a.y += a.dy * dt
+            a.angle += a.spin * dt
+            if a.x < -margin:
+                a.x = SCREEN_WIDTH + margin
+            elif a.x > SCREEN_WIDTH + margin:
+                a.x = -margin
+            if a.y < -margin:
+                a.y = SCREEN_HEIGHT + margin
+            elif a.y > SCREEN_HEIGHT + margin:
+                a.y = -margin
+
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
+        self._update_asteroids(dt)
         self.frog.tick(dt)
         self.chain.advance(dt)
         self._spawn_particles()
@@ -244,6 +295,7 @@ class Game:
             self.renderer.draw_level_select(mouse_pos)
         else:
             self.renderer.clear()
+            self.renderer.draw_asteroids(self.asteroids)
             self.renderer.draw_path(self.path)
             self.renderer.draw_chain(self.chain, self.path)
             self.renderer.draw_particles(self.particles)

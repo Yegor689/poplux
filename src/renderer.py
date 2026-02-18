@@ -31,9 +31,9 @@ class Renderer:
             if kind == 'dim':
                 r, brightness = 1, rng.randint(80, 160)
             elif kind == 'mid':
-                r, brightness = 2, rng.randint(160, 210)
+                r, brightness = 1, rng.randint(160, 210)
             else:
-                r, brightness = 3, rng.randint(220, 255)
+                r, brightness = 2, rng.randint(220, 255)
             tint = rng.choice([(10, 10, 40), (0, 0, 0), (30, 20, 0)])
             col = tuple(min(255, brightness + t) for t in tint)
             spike = kind == 'bright'
@@ -79,6 +79,17 @@ class Renderer:
         x, y, r = int(pos[0]), int(pos[1]), max(0, int(radius))
         pygame.gfxdraw.filled_circle(surface, x, y, r, color)
         pygame.gfxdraw.aacircle(surface, x, y, r, color)
+
+    def draw_asteroids(self, asteroids) -> None:
+        for a in asteroids:
+            ca, sa = math.cos(a.angle), math.sin(a.angle)
+            pts = [
+                (int(a.x + vx * ca - vy * sa),
+                 int(a.y + vx * sa + vy * ca))
+                for vx, vy in a.verts
+            ]
+            pygame.draw.polygon(self.screen, (48, 45, 41), pts)
+            pygame.draw.polygon(self.screen, (78, 73, 66), pts, 1)
 
     def draw_path(self, path) -> None:
         if len(path.waypoints) < 2:
