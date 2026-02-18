@@ -2,7 +2,7 @@ import math
 import pygame
 import pygame.gfxdraw
 from settings import (
-    BALL_COLORS, BG_COLOR, HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
+    BALL_COLORS, HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
     SCREEN_WIDTH, SCREEN_HEIGHT,
 )
 
@@ -296,8 +296,6 @@ class Renderer:
         return None
 
     def draw_level_select(self, mouse_pos) -> None:
-        self.screen.fill(BG_COLOR)
-
         title = self.font_large.render("Select Level", True, HUD_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 65)))
 
@@ -352,8 +350,6 @@ class Renderer:
         return None
 
     def draw_main_menu(self, mouse_pos) -> None:
-        self.screen.fill(BG_COLOR)
-
         title = self.font_large.render("POPLUX", True, (80, 210, 80))
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 170)))
 

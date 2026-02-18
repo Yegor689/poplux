@@ -62,6 +62,7 @@ class Game:
             dt = self.clock.tick(FPS) / 1000.0
             self._frame_mouse = self._logical_mouse()
             running = self._handle_events()
+            self.background.update(dt)
             if self.state in ("playing",):
                 self._update(dt)
             self._render()
@@ -173,7 +174,6 @@ class Game:
 
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
-        self.background.update(dt)
         self.frog.tick(dt)
         self.chain.advance(dt)
         self._spawn_particles()
@@ -239,13 +239,13 @@ class Game:
 
     def _render(self) -> None:
         mouse_pos = self._frame_mouse
+        self.background.draw(self._logical)
 
         if self.state == "main_menu":
             self.renderer.draw_main_menu(mouse_pos)
         elif self.state == "level_select":
             self.renderer.draw_level_select(mouse_pos)
         else:
-            self.background.draw(self._logical)
             self.renderer.draw_path(self.path)
             self.renderer.draw_chain(self.chain, self.path)
             self.renderer.draw_particles(self.particles)
