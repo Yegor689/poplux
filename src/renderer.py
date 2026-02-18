@@ -1,10 +1,9 @@
 import math
-import random
 import pygame
 import pygame.gfxdraw
 from settings import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, BALL_COLORS, BG_COLOR,
-    HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
+    BALL_COLORS, BG_COLOR, HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
+    SCREEN_WIDTH, SCREEN_HEIGHT,
 )
 
 
@@ -15,37 +14,7 @@ class Renderer:
         self.font_med = pygame.font.SysFont(None, 36)
         self.font_small = pygame.font.SysFont(None, 28)
         self.font_score = pygame.font.SysFont(None, 48, bold=True)
-        self._bg_surface = self._render_starfield()
         self._palettes = self._build_palettes()
-
-    @staticmethod
-    def _render_starfield() -> pygame.Surface:
-        """Pre-render the starfield background to a surface (called once)."""
-        surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
-        surf.fill((4, 4, 14))
-        rng = random.Random(42)
-        for _ in range(260):
-            x = rng.randint(0, SCREEN_WIDTH)
-            y = rng.randint(0, SCREEN_HEIGHT)
-            kind = rng.choices(['dim', 'mid', 'bright'], weights=[55, 35, 10])[0]
-            if kind == 'dim':
-                r, brightness = 1, rng.randint(80, 160)
-            elif kind == 'mid':
-                r, brightness = 1, rng.randint(160, 210)
-            else:
-                r, brightness = 2, rng.randint(220, 255)
-            tint = rng.choice([(10, 10, 40), (0, 0, 0), (30, 20, 0)])
-            col = tuple(min(255, brightness + t) for t in tint)
-            spike = kind == 'bright'
-            if r == 1:
-                surf.set_at((x, y), col)
-            else:
-                Renderer._aa_circle(surf, col, (x, y), r)
-            if spike:
-                dim = tuple(c // 3 for c in col)
-                pygame.draw.line(surf, dim, (x - 6, y), (x + 6, y), 1)
-                pygame.draw.line(surf, dim, (x, y - 6), (x, y + 6), 1)
-        return surf
 
     @staticmethod
     def _build_palettes() -> dict:
@@ -70,26 +39,12 @@ class Renderer:
         )
         return palettes
 
-    def clear(self) -> None:
-        self.screen.blit(self._bg_surface, (0, 0))
-
     @staticmethod
     def _aa_circle(surface: pygame.Surface, color: tuple, pos: tuple, radius: int) -> None:
         """Filled anti-aliased circle."""
         x, y, r = int(pos[0]), int(pos[1]), max(0, int(radius))
         pygame.gfxdraw.filled_circle(surface, x, y, r, color)
         pygame.gfxdraw.aacircle(surface, x, y, r, color)
-
-    def draw_asteroids(self, asteroids) -> None:
-        for a in asteroids:
-            ca, sa = math.cos(a.angle), math.sin(a.angle)
-            pts = [
-                (int(a.x + vx * ca - vy * sa),
-                 int(a.y + vx * sa + vy * ca))
-                for vx, vy in a.verts
-            ]
-            pygame.draw.polygon(self.screen, (48, 45, 41), pts)
-            pygame.draw.polygon(self.screen, (78, 73, 66), pts, 1)
 
     def draw_path(self, path) -> None:
         if len(path.waypoints) < 2:
