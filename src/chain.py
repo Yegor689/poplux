@@ -125,7 +125,9 @@ class Chain:
                 continue
             gap_now = self.balls[i + 1].path_distance - self.balls[i].path_distance
             if gap_now <= _GAP_THRESHOLD:
-                self.balls[i + 1].path_distance = self.balls[i].path_distance + BALL_DIAMETER
+                snap_delta = (self.balls[i].path_distance + BALL_DIAMETER) - self.balls[i + 1].path_distance
+                for j in range(i + 1, len(self.balls)):
+                    self.balls[j].path_distance += snap_delta
                 matches = self.check_matches(i)
                 if len(matches) < MATCH_MINIMUM:
                     matches = self.check_matches(i + 1)
