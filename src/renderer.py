@@ -330,7 +330,7 @@ class Renderer:
     _MENU_BTN_W = 300
     _MENU_BTN_H = 58
     _MENU_BTN_GAP = 18
-    _MENU_LABELS = ["PLAY", "SELECT LEVEL", "QUIT"]
+    _MENU_LABELS = ["PLAY", "SELECT LEVEL", "RECORDS", "QUIT"]
 
     def _main_menu_button_rects(self) -> list:
         n = len(self._MENU_LABELS)
@@ -351,7 +351,7 @@ class Renderer:
 
     def draw_main_menu(self, mouse_pos) -> None:
         title = self.font_large.render("POPLUX", True, (80, 210, 80))
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 170)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 105)))
 
         rects = self._main_menu_button_rects()
         for i, (rect, label) in enumerate(zip(rects, self._MENU_LABELS)):
@@ -456,3 +456,68 @@ class Renderer:
             pygame.draw.rect(self.screen, (200, 200, 200), rect, 2, border_radius=10)
             txt = self.font_small.render(label, True, HUD_COLOR)
             self.screen.blit(txt, txt.get_rect(center=rect.center))
+
+    # ------------------------------------------------------------------ #
+    # Records screen                                                       #
+    # ------------------------------------------------------------------ #
+
+    _COL_X      = (55, 310, 460, 590, 720)   # #, Level, Score, Time, Date
+    _COL_LABELS = ("#",  "LEVEL", "SCORE", "TIME", "DATE")
+    _COL_ALIGN  = ("r",  "l",     "r",     "r",    "r")
+    _ROW_H      = 26
+    _TABLE_TOP  = 120
+
+    def draw_records(self, records: list) -> None:
+        title = self.font_large.render("RECORDS", True, HUD_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 50)))
+
+        if not records:
+            msg = self.font_med.render("No records yet — win a level to get started!", True, (160, 160, 160))
+            self.screen.blit(msg, msg.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)))
+            hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
+            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
+            return
+
+        # Header row
+        header_y = self._TABLE_TOP
+        for label, x, align in zip(self._COL_LABELS, self._COL_X, self._COL_ALIGN):
+            surf = self.font_small.render(label, True, (180, 180, 100))
+            rect = surf.get_rect(y=header_y)
+            if align == "r":
+                rect.right = x
+            else:
+                rect.left = x
+            self.screen.blit(surf, rect)
+
+        # Divider
+        div_y = header_y + self.font_small.get_height() + 4
+        pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y))
+
+        # Data rows
+        max_rows = (SCREEN_HEIGHT - div_y - 40) // self._ROW_H
+        for row_i, rec in enumerate(records[:max_rows]):
+            y = div_y + 6 + row_i * self._ROW_H
+            shade = (22, 22, 30) if row_i % 2 == 0 else (0, 0, 0, 0)
+            pygame.draw.rect(self.screen, shade,
+                             pygame.Rect(40, y - 2, SCREEN_WIDTH - 80, self._ROW_H - 2))
+
+            mins, secs = divmod(int(rec["time"]), 60)
+            cells = (
+                str(row_i + 1),
+                rec["level"],
+                str(rec["score"]),
+                f"{mins}:{secs:02d}",
+                rec["date"],
+            )
+            color = (255, 220, 50) if row_i == 0 else HUD_COLOR
+            for cell, x, align in zip(cells, self._COL_X, self._COL_ALIGN):
+                surf = self.font_small.render(cell, True, color)
+                rect = surf.get_rect(y=y)
+                if align == "r":
+                    rect.right = x
+                else:
+                    rect.left = x
+                self.screen.blit(surf, rect)
+
+        hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))

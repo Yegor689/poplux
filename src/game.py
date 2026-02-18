@@ -8,6 +8,7 @@ from chain import Chain
 from renderer import Renderer
 from background import Background
 from ball import Particle
+import records as records_store
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
     BALL_RADIUS, MATCH_MINIMUM, LEVELS, BALL_COLORS,
@@ -120,6 +121,8 @@ class Game:
                     elif btn == 1:
                         self.state = "level_select"
                     elif btn == 2:
+                        self.state = "records"
+                    elif btn == 3:
                         return False
                 elif self.state == "level_select":
                     idx = self.renderer.level_button_at(mouse_pos)
@@ -202,6 +205,8 @@ class Game:
         self._check_collisions()
 
         if self.chain.is_empty() and self.spawned_count >= self._total_balls:
+            level_name = LEVELS[self.current_level_idx]["name"]
+            records_store.save(level_name, self.score, self.elapsed_time)
             if self.current_level_idx + 1 < len(LEVELS):
                 self.state = "level_complete"
             else:
@@ -245,6 +250,8 @@ class Game:
             self.renderer.draw_main_menu(mouse_pos)
         elif self.state == "level_select":
             self.renderer.draw_level_select(mouse_pos)
+        elif self.state == "records":
+            self.renderer.draw_records(records_store.top())
         else:
             self.renderer.draw_path(self.path)
             self.renderer.draw_chain(self.chain, self.path)
