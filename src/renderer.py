@@ -116,6 +116,12 @@ class Renderer:
             r = max(1, int(p.radius * p.t))
             self._aa_circle(self.screen, p.color, (int(p.x), int(p.y)), r)
 
+    def draw_score_popups(self, popups: list) -> None:
+        for p in popups:
+            surf = self.font_score.render(p.text, True, p.color)
+            surf.set_alpha(p.alpha)
+            self.screen.blit(surf, surf.get_rect(center=(int(p.x), int(p.y))))
+
     def draw_fired_balls(self, fired_balls: list) -> None:
         for ball in fired_balls:
             if ball.active:

@@ -29,6 +29,29 @@ class Particle:
 
 
 @dataclass
+class ScorePopup:
+    x: float
+    y: float
+    text: str
+    color: tuple
+    lifetime: float
+    max_lifetime: float
+    vy: float = -110.0  # pixels per second upward
+
+    def update(self, dt: float) -> None:
+        self.y += self.vy * dt
+        self.lifetime -= dt
+
+    @property
+    def alive(self) -> bool:
+        return self.lifetime > 0
+
+    @property
+    def alpha(self) -> int:
+        return int(255 * max(0.0, self.lifetime / self.max_lifetime))
+
+
+@dataclass
 class Ball:
     color: str
     radius: int = BALL_RADIUS

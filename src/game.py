@@ -7,7 +7,7 @@ from frog import Frog
 from chain import Chain
 from renderer import Renderer
 from background import Background
-from ball import Particle
+from ball import Particle, ScorePopup
 import records as records_store
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
@@ -29,6 +29,7 @@ class Game:
         self.chain = None
         self.fired_balls = []
         self.particles: list[Particle] = []
+        self.score_popups: list[ScorePopup] = []
         self.spawned_count = 0
         self._total_balls = 0
         self._cached_scale_rect = None
@@ -45,6 +46,7 @@ class Game:
         self.chain = Chain(self.path, cfg["chain_speed"])
         self.fired_balls = []
         self.particles = []
+        self.score_popups = []
         self.spawned_count = 0
         self._total_balls = cfg["total_balls"]
         self.elapsed_time = 0.0
@@ -156,7 +158,27 @@ class Game:
     _PARTICLE_LIFE  = (0.3, 0.55)
     _PARTICLE_R     = 5
 
+    _POPUP_COLORS = [
+        (255, 240,  55),   # cascade 1 — yellow
+        (255, 170,  30),   # cascade 2 — orange
+        (255,  90,  60),   # cascade 3+ — coral
+    ]
+
     def _spawn_particles(self) -> None:
+        if not self.chain.recent_pops:
+            return
+
+        # One score popup per group, centred on the popped balls
+        positions = [self.path.point_at(d) for d, _, _ in self.chain.recent_pops]
+        cx = sum(p[0] for p in positions) / len(positions)
+        cy = sum(p[1] for p in positions) / len(positions)
+        cascade_level = self.chain.recent_pops[0][2]
+        total = len(self.chain.recent_pops) * cascade_level
+        text = f"+{total}" if cascade_level == 1 else f"+{total}  ×{cascade_level}"
+        color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
+        life = 1.1
+        self.score_popups.append(ScorePopup(cx, cy, text, color, life, life))
+
         for path_dist, color_name, cascade_level in self.chain.recent_pops:
             self.score += cascade_level  # 1 pt × combo multiplier per ball popped
             cx, cy = self.path.point_at(path_dist)
@@ -188,6 +210,10 @@ class Game:
 
         self.particles = [p for p in self.particles if p.alive]
         for p in self.particles:
+            p.update(dt)
+
+        self.score_popups = [p for p in self.score_popups if p.alive]
+        for p in self.score_popups:
             p.update(dt)
 
         while self.spawned_count < self._total_balls and self.chain.needs_spawn():
@@ -256,6 +282,7 @@ class Game:
             self.renderer.draw_path(self.path)
             self.renderer.draw_chain(self.chain, self.path)
             self.renderer.draw_particles(self.particles)
+            self.renderer.draw_score_popups(self.score_popups)
             self.renderer.draw_fired_balls(self.fired_balls)
             self.renderer.draw_frog(self.frog)
             self.renderer.draw_hud(
