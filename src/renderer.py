@@ -147,6 +147,7 @@ class Renderer:
         pygame.draw.line(surface, (255, 200, 0), (cx, cy - r2), (cx, cy + r2), 2)
 
     def draw_chain(self, chain, path) -> None:
+        t_pulse = pygame.time.get_ticks() / 1000.0
         for ball in chain.balls:
             cx, cy = path.point_at(ball.path_distance + ball.path_offset)
             if ball.entry_t < 1.0:
@@ -156,6 +157,13 @@ class Renderer:
                 cy = ball.entry_y + (cy - ball.entry_y) * t
             tangent = path.direction_at(ball.path_distance)
             spin = ball.path_distance / ball.radius
+            if ball.is_bonus:
+                ring_r = ball.radius + 5 + int(math.sin(t_pulse * 5) * 2)
+                brightness = int(abs(math.sin(t_pulse * 4)) * 80 + 175)
+                pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r,
+                                        (brightness, brightness, 255))
+                pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r + 2,
+                                        (brightness, brightness, 255, 80))
             self._draw_ball(self.screen, ball.color, int(cx), int(cy), ball.radius,
                             spin, tangent)
 

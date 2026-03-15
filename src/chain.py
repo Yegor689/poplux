@@ -3,6 +3,8 @@ import random
 from ball import Ball
 from settings import BALL_DIAMETER, MATCH_MINIMUM, MAX_SAME_IN_ROW, BALL_COLORS
 
+_BONUS_CHANCE = 0.03  # probability a spawned chain ball is a bonus ball
+
 COLOR_NAMES = list(BALL_COLORS.keys())
 
 # Front-segment reverse speed multiplier (relative to normal chain speed)
@@ -37,12 +39,15 @@ class Chain:
         self._pair_count: int = 0            # how many of this colour spawned so far
         # balls[0] = rear/spawn-side (smallest path_distance)
         # balls[-1] = front/hole-side (largest path_distance)
+        self.movement_mult: float = 1.0  # applied only to forward delta, not catch-up
         self.balls: list[Ball] = []
         self._cascade_pending: list[Ball] = []  # balls queued to pop after delay
         self._cascade_timer: float = 0.0
         self._cascade_level: int = 0            # current cascade depth (1 = first pop, 2 = first cascade, …)
         self._next_cascade_level: int = 1       # level to use when the next gap-based cascade is queued
         self.recent_pops: list[tuple[float, str, int]] = []  # (path_distance, color, cascade_level)
+        self.bonus_popped: bool = False
+        self.bonus_pop_dist: float = 0.0
 
     # ------------------------------------------------------------------
     # Population / spawning
@@ -63,7 +68,8 @@ class Chain:
         for i in range(count):
             color = self._next_pair_color() if self.pair_mode else _random_color(last_two, self.color_pool)
             last_two.append(color)
-            self.balls.append(Ball(color=color, path_distance=float(i * BALL_DIAMETER)))
+            self.balls.append(Ball(color=color, path_distance=float(i * BALL_DIAMETER),
+                                   is_bonus=random.random() < _BONUS_CHANCE))
 
     def spawn_one(self) -> Ball:
         """Slot a new ball just behind the current rear ball (no shifting needed).
@@ -71,7 +77,8 @@ class Chain:
         last_two = [b.color for b in self.balls[:2]]
         color = self._next_pair_color() if self.pair_mode else _random_color(last_two, self.color_pool)
         new_dist = (self.balls[0].path_distance - BALL_DIAMETER) if self.balls else 0.0
-        new_ball = Ball(color=color, path_distance=max(0.0, new_dist))
+        new_ball = Ball(color=color, path_distance=max(0.0, new_dist),
+                        is_bonus=random.random() < _BONUS_CHANCE)
         self.balls.insert(0, new_ball)
         return new_ball
 
@@ -93,6 +100,7 @@ class Chain:
             return
 
         self.recent_pops.clear()
+        self.bonus_popped = False
 
         # --- Tick cascade timer; fire when ready ---
         if self._cascade_pending:
@@ -101,7 +109,7 @@ class Chain:
                 self._fire_cascade()
             # Keep advancing while waiting (rear segment still moves)
 
-        delta = self.speed * dt
+        delta = self.speed * self.movement_mult * dt
 
         # Snapshot gap sizes BEFORE advancing
         prev_gaps = [
@@ -191,6 +199,12 @@ class Chain:
         # Record pops for the particle system and score
         for i in indices:
             self.recent_pops.append((self.balls[i].path_distance, self.balls[i].color, self._cascade_level))
+        # Check if any bonus ball is among the popped ones
+        for b in self._cascade_pending:
+            if b.is_bonus:
+                self.bonus_popped = True
+                self.bonus_pop_dist = b.path_distance
+                break
         # Prime the next level before clearing so advance() can pick it up
         self._next_cascade_level = self._cascade_level + 1
         self._cascade_pending = []
