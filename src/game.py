@@ -7,7 +7,7 @@ from frog import Frog
 from chain import Chain
 from renderer import Renderer
 from background import Background
-from ball import Particle, ScorePopup
+from ball import Ball, Particle, ScorePopup
 import records as records_store
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
@@ -36,6 +36,12 @@ class Game:
         self._cached_screen_size = None
         self._frame_mouse = (0, 0)
         self.background = Background()
+        self._pre_pause_state = "playing"  # state to restore when unpausing
+        self.active_cheats: set = set()
+        self._cheat_input: str = ""
+        self._cheat_message: str = ""
+        self._endless_mode: bool = False
+        self._endless_base_speed: float = 0.0
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -57,7 +63,88 @@ class Game:
         self.chain.populate(pre)
         self.spawned_count = pre
 
+        self._endless_mode = False
+        self._pre_pause_state = "playing"
         self.state = "playing"
+
+    _COMBO_TEST_COLORS = list(BALL_COLORS.keys())[:2]  # first two colours only
+
+    _CHEAT_CODES = {
+        "GODMODE":   "No lose condition",
+        "SLOWMO":    "Chain at 25% speed",
+        "MAGNET":    "Fired balls home in on chain",
+        "FASTBALL":  "Balls travel 3x faster",
+        "MULTISHOT": "Every shot fires 3 balls",
+        "RAINBOW":   "Fired balls auto-match color",
+        "RESET":     "Clear all active cheats",
+    }
+
+    def _init_combo_test(self) -> None:
+        """Secret combo-tester: two ball colours, infinite supply, no win/lose."""
+        cfg = LEVELS[0]
+        self.current_level_idx = 0
+        self.path = Path(cfg)
+        frog_pos = cfg.get("frog_pos")
+        self.frog = Frog(pos=frog_pos, color_pool=self._COMBO_TEST_COLORS)
+        self.chain = Chain(self.path, cfg["chain_speed"],
+                           color_pool=self._COMBO_TEST_COLORS, pair_mode=True)
+        self.fired_balls = []
+        self.particles = []
+        self.score_popups = []
+        self.spawned_count = 0
+        self._total_balls = 999_999
+        self.elapsed_time = 0.0
+        self.score = 0
+        self.show_debug_hud = False
+        pre = min(cfg["pre_placed"], self._total_balls)
+        self.chain.populate(pre)
+        self.spawned_count = pre
+        self._endless_mode = False
+        self._pre_pause_state = "combo_test"
+        self.state = "combo_test"
+
+    def _init_endless_mode(self) -> None:
+        """Endless mode: Level 1 layout, infinite balls, chain speeds up over time."""
+        cfg = LEVELS[0]
+        self.current_level_idx = 0
+        self.path = Path(cfg)
+        frog_pos = cfg.get("frog_pos")
+        self.frog = Frog(pos=frog_pos)
+        self.chain = Chain(self.path, cfg["chain_speed"])
+        self.fired_balls = []
+        self.particles = []
+        self.score_popups = []
+        self.spawned_count = 0
+        self._total_balls = 999_999
+        self.elapsed_time = 0.0
+        self.score = 0
+        self.show_debug_hud = False
+        pre = min(cfg["pre_placed"], self._total_balls)
+        self.chain.populate(pre)
+        self.spawned_count = pre
+        self._endless_mode = True
+        self._endless_base_speed = float(cfg["chain_speed"])
+        self._pre_pause_state = "playing"
+        self.state = "playing"
+
+    def _submit_cheat(self) -> None:
+        code = self._cheat_input.strip()
+        self._cheat_input = ""
+        if not code:
+            return
+        if code not in self._CHEAT_CODES:
+            self._cheat_message = "UNKNOWN CODE"
+            return
+        if code == "RESET":
+            self.active_cheats.clear()
+            self._cheat_message = "ALL CHEATS CLEARED"
+            return
+        if code in self.active_cheats:
+            self.active_cheats.discard(code)
+            self._cheat_message = f"{code}  [OFF]"
+        else:
+            self.active_cheats.add(code)
+            self._cheat_message = f"{code}  [ARMED]" if code == "CLEARALL" else f"{code}  [ON]"
 
     def run(self) -> None:
         running = True
@@ -66,7 +153,7 @@ class Game:
             self._frame_mouse = self._logical_mouse()
             running = self._handle_events()
             self.background.update(dt)
-            if self.state in ("playing",):
+            if self.state in ("playing", "combo_test"):
                 self._update(dt)
             self._render()
         pygame.quit()
@@ -102,18 +189,36 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == "main_menu":
                         return False
-                    elif self.state == "playing":
+                    elif self.state in ("playing", "combo_test"):
+                        self._pre_pause_state = self.state
                         self.state = "paused"
                     elif self.state == "paused":
-                        self.state = "playing"
+                        self.state = self._pre_pause_state
                     else:
                         self.state = "main_menu"
                 if event.key == pygame.K_r and self.state == "lose":
-                    self._init_game_state(self.current_level_idx)
+                    if self._endless_mode:
+                        self._init_endless_mode()
+                    else:
+                        self._init_game_state(self.current_level_idx)
+                if event.key == pygame.K_r and self.state == "combo_test":
+                    self._init_combo_test()
                 if event.key == pygame.K_s and self.state == "playing":
                     self.show_debug_hud = not self.show_debug_hud
+                elif event.key == pygame.K_s and self.state == "level_select":
+                    self._init_combo_test()
+                elif event.key == pygame.K_s and self.state == "main_menu":
+                    self.state = "cheat_menu"
+                elif self.state == "cheat_menu":
+                    if event.key == pygame.K_BACKSPACE:
+                        self._cheat_input = self._cheat_input[:-1]
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        self._submit_cheat()
+                    elif event.unicode and event.unicode.isalpha():
+                        self._cheat_message = ""
+                        self._cheat_input += event.unicode.upper()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                if self.state == "playing":
+                if self.state in ("playing", "combo_test"):
                     self.frog.swap()
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == "main_menu":
@@ -130,9 +235,21 @@ class Game:
                     idx = self.renderer.level_button_at(mouse_pos)
                     if idx is not None:
                         self._init_game_state(idx)
-                elif self.state == "playing":
+                elif self.state in ("playing", "combo_test"):
                     ball = self.frog.shoot()
+                    if "FASTBALL" in self.active_cheats:
+                        ball.dx *= 3.0
+                        ball.dy *= 3.0
                     self.fired_balls.append(ball)
+                    if "MULTISHOT" in self.active_cheats:
+                        for offset in (-0.26, 0.26):  # ±15°
+                            co, so = math.cos(offset), math.sin(offset)
+                            extra = Ball(color=ball.color, radius=ball.radius)
+                            extra.x, extra.y = ball.x, ball.y
+                            extra.dx = ball.dx * co - ball.dy * so
+                            extra.dy = ball.dx * so + ball.dy * co
+                            extra.active = True
+                            self.fired_balls.append(extra)
                 elif self.state == "level_complete":
                     btn = self.renderer.level_complete_button_at(mouse_pos)
                     if btn == 0:
@@ -142,14 +259,19 @@ class Game:
                 elif self.state == "paused":
                     btn = self.renderer.pause_button_at(mouse_pos)
                     if btn == 0:
-                        self.state = "playing"
+                        self.state = self._pre_pause_state
                     elif btn == 1:
-                        self._init_game_state(self.current_level_idx)
+                        if self._pre_pause_state == "combo_test":
+                            self._init_combo_test()
+                        elif self._endless_mode:
+                            self._init_endless_mode()
+                        else:
+                            self._init_game_state(self.current_level_idx)
                     elif btn == 2:
                         self.state = "main_menu"
                 elif self.state in ("lose", "game_complete"):
                     self.state = "main_menu"
-        if self.state == "playing":
+        if self.state in ("playing", "combo_test"):
             self.frog.update(self._frame_mouse)
         return True
 
@@ -197,10 +319,24 @@ class Game:
                     color=color, radius=self._PARTICLE_R,
                 ))
 
+    _COMBO_SPEED_MULTIPLIER = 4.0
+
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
         self.frog.tick(dt)
-        self.chain.advance(dt)
+        if self.state == "combo_test" and pygame.key.get_pressed()[pygame.K_s]:
+            self.chain.advance(dt * self._COMBO_SPEED_MULTIPLIER)
+        elif "SLOWMO" in self.active_cheats:
+            self.chain.advance(dt * 0.25)
+        else:
+            self.chain.advance(dt)
+
+        if self._endless_mode:
+            # Speed ramps up continuously: +50% per minute, capped at 4× base
+            scale = 1.0 + self.elapsed_time / 120.0
+            self.chain.speed = min(self._endless_base_speed * scale,
+                                   self._endless_base_speed * 4.0)
+
         self._spawn_particles()
 
         # Remove exhausted colors from the frog's generation pool
@@ -216,9 +352,46 @@ class Game:
         for p in self.score_popups:
             p.update(dt)
 
+        # Combo-test: remove balls that exit the path so they don't pile up at
+        # the hole and corrupt collisions.  Re-seed the chain if it fully empties
+        # so spawning can continue.
+        if self.state == "combo_test":
+            while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
+                self.chain.balls.pop()
+            # If we popped balls that were cascade-pending, clear the stale refs
+            if self.chain._cascade_pending:
+                live_ids = {id(b) for b in self.chain.balls}
+                self.chain._cascade_pending = [
+                    b for b in self.chain._cascade_pending if id(b) in live_ids
+                ]
+            if self.chain.is_empty() and self.spawned_count < self._total_balls:
+                self.chain.spawn_one()
+                self.spawned_count += 1
+
         while self.spawned_count < self._total_balls and self.chain.needs_spawn():
             self.chain.spawn_one()
             self.spawned_count += 1
+
+        if "MAGNET" in self.active_cheats and self.chain.balls:
+            for ball in self.fired_balls:
+                best_dist_sq = float('inf')
+                target = None
+                for cb in self.chain.balls:
+                    cx, cy = self.path.point_at(cb.path_distance)
+                    dsq = (ball.x - cx) ** 2 + (ball.y - cy) ** 2
+                    if dsq < best_dist_sq:
+                        best_dist_sq = dsq
+                        target = (cx, cy)
+                if target:
+                    speed = math.sqrt(ball.dx ** 2 + ball.dy ** 2)
+                    if speed > 0:
+                        cur_angle = math.atan2(ball.dy, ball.dx)
+                        tgt_angle = math.atan2(target[1] - ball.y, target[0] - ball.x)
+                        diff = (tgt_angle - cur_angle + math.pi) % (2 * math.pi) - math.pi
+                        turn = max(-4.0 * dt, min(4.0 * dt, diff))
+                        new_angle = cur_angle + turn
+                        ball.dx = math.cos(new_angle) * speed
+                        ball.dy = math.sin(new_angle) * speed
 
         to_remove = []
         for ball in self.fired_balls:
@@ -230,15 +403,27 @@ class Game:
 
         self._check_collisions()
 
-        if self.chain.is_empty() and self.spawned_count >= self._total_balls:
-            level_name = LEVELS[self.current_level_idx]["name"]
-            records_store.save(level_name, self.score, self.elapsed_time)
-            if self.current_level_idx + 1 < len(LEVELS):
-                self.state = "level_complete"
-            else:
-                self.state = "game_complete"
-        elif self.chain.front_distance() >= self.path.total_length:
-            self.state = "lose"
+        if "GODMODE" in self.active_cheats:
+            while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
+                self.chain.balls.pop()
+            if self.chain._cascade_pending:
+                live_ids = {id(b) for b in self.chain.balls}
+                self.chain._cascade_pending = [
+                    b for b in self.chain._cascade_pending if id(b) in live_ids
+                ]
+
+        if self.state != "combo_test":
+            if self.chain.is_empty() and self.spawned_count >= self._total_balls:
+                level_name = LEVELS[self.current_level_idx]["name"]
+                records_store.save(level_name, self.score, self.elapsed_time)
+                if self.current_level_idx + 1 < len(LEVELS):
+                    self.state = "level_complete"
+                else:
+                    self.state = "game_complete"
+            elif self.chain.front_distance() >= self.path.total_length:
+                if self._endless_mode:
+                    records_store.save("Endless", self.score, self.elapsed_time)
+                self.state = "lose"
 
     def _out_of_bounds(self, ball) -> bool:
         return (ball.x < -BALL_RADIUS or ball.x > SCREEN_WIDTH + BALL_RADIUS or
@@ -258,6 +443,8 @@ class Game:
                     hit_idx = i
 
             if hit_idx is not None:
+                if "RAINBOW" in self.active_cheats:
+                    fired.color = self.chain.balls[hit_idx].color
                 path_dist = self.chain.balls[hit_idx].path_distance
                 idx = self.chain.insert(fired, path_dist)
                 matches = self.chain.check_matches(idx)
@@ -274,6 +461,8 @@ class Game:
 
         if self.state == "main_menu":
             self.renderer.draw_main_menu(mouse_pos)
+        elif self.state == "cheat_menu":
+            self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
             self.renderer.draw_level_select(mouse_pos)
         elif self.state == "records":
@@ -289,7 +478,7 @@ class Game:
                 remaining=len(self.chain.balls),
                 spawned=self.spawned_count,
                 total=self._total_balls,
-                level_name=LEVELS[self.current_level_idx]["name"],
+                level_name="COMBO TEST" if self._pre_pause_state == "combo_test" else ("ENDLESS" if self._endless_mode else LEVELS[self.current_level_idx]["name"]),
                 elapsed_time=self.elapsed_time,
                 score=self.score,
                 show_debug=self.show_debug_hud,
@@ -302,7 +491,15 @@ class Game:
             elif self.state == "game_complete":
                 self.renderer.draw_overlay("YOU WIN!", "All levels cleared!  Click to return to menu")
             elif self.state == "lose":
-                self.renderer.draw_overlay("GAME OVER", "R to retry  ·  Click to return to menu")
+                if self._endless_mode:
+                    mins = int(self.elapsed_time) // 60
+                    secs = int(self.elapsed_time) % 60
+                    self.renderer.draw_overlay(
+                        "GAME OVER",
+                        f"Score: {self.score:,}  ·  {mins}:{secs:02d}  ·  R retry  ·  Click for menu",
+                    )
+                else:
+                    self.renderer.draw_overlay("GAME OVER", "R to retry  ·  Click to return to menu")
 
         scale, ox, oy, scaled_w, scaled_h = self._scale_rect()
         scaled = pygame.transform.smoothscale(self._logical, (scaled_w, scaled_h))

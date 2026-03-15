@@ -9,44 +9,59 @@ COLOR_NAMES = list(BALL_COLORS.keys())
 _CATCH_UP_MULTIPLIER = 10.0
 # A gap larger than this threshold is considered "open" (needs closing)
 _GAP_THRESHOLD = BALL_DIAMETER * 1.2
-# Seconds to wait between cascade pops
-_CASCADE_DELAY = 0.25
+# Seconds to wait after catch-up closes a gap before the matched balls pop
+_CASCADE_DELAY = 0.5
 # Insertion animation: how many balls ahead animate + decay rate (px/s)
 _ANIM_BALLS  = 5
 _ANIM_RATE   = BALL_DIAMETER / 0.17   # completes in ~0.17 s
 _ENTRY_SPEED = 1.0 / 0.17             # entry animation: 0→1 in ~0.17 s
 
 
-def _random_color(last_two: list[str]) -> str:
-    """Pick a random color, avoiding more than MAX_SAME_IN_ROW consecutive."""
+def _random_color(last_two: list[str], pool: list[str]) -> str:
+    """Pick a random color from pool, avoiding more than MAX_SAME_IN_ROW consecutive."""
     if len(last_two) >= MAX_SAME_IN_ROW and len(set(last_two[-MAX_SAME_IN_ROW:])) == 1:
-        choices = [c for c in COLOR_NAMES if c != last_two[-1]]
+        choices = [c for c in pool if c != last_two[-1]]
     else:
-        choices = COLOR_NAMES
-    return random.choice(choices)
+        choices = pool
+    return random.choice(choices if choices else pool)
 
 
 class Chain:
-    def __init__(self, path, speed: float):
+    def __init__(self, path, speed: float, color_pool: list[str] | None = None,
+                 pair_mode: bool = False):
         self.path = path
         self.speed = speed
+        self.color_pool: list[str] = list(color_pool) if color_pool is not None else COLOR_NAMES
+        self.pair_mode: bool = pair_mode
+        self._pair_color: str | None = None  # current pair colour
+        self._pair_count: int = 0            # how many of this colour spawned so far
         # balls[0] = rear/spawn-side (smallest path_distance)
         # balls[-1] = front/hole-side (largest path_distance)
         self.balls: list[Ball] = []
         self._cascade_pending: list[Ball] = []  # balls queued to pop after delay
         self._cascade_timer: float = 0.0
         self._cascade_level: int = 0            # current cascade depth (1 = first pop, 2 = first cascade, …)
+        self._next_cascade_level: int = 1       # level to use when the next gap-based cascade is queued
         self.recent_pops: list[tuple[float, str, int]] = []  # (path_distance, color, cascade_level)
 
     # ------------------------------------------------------------------
     # Population / spawning
     # ------------------------------------------------------------------
 
+    def _next_pair_color(self) -> str:
+        """Return the next colour in pair-mode (R R B B R R …)."""
+        if self._pair_count >= 2 or self._pair_color is None:
+            others = [c for c in self.color_pool if c != self._pair_color]
+            self._pair_color = random.choice(others if others else self.color_pool)
+            self._pair_count = 0
+        self._pair_count += 1
+        return self._pair_color
+
     def populate(self, count: int) -> None:
         """Pre-place `count` touching balls at the spawn end."""
         last_two: list[str] = []
         for i in range(count):
-            color = _random_color(last_two)
+            color = self._next_pair_color() if self.pair_mode else _random_color(last_two, self.color_pool)
             last_two.append(color)
             self.balls.append(Ball(color=color, path_distance=float(i * BALL_DIAMETER)))
 
@@ -54,7 +69,7 @@ class Chain:
         """Slot a new ball just behind the current rear ball (no shifting needed).
         Call only when needs_spawn() is True."""
         last_two = [b.color for b in self.balls[:2]]
-        color = _random_color(last_two)
+        color = self._next_pair_color() if self.pair_mode else _random_color(last_two, self.color_pool)
         new_dist = (self.balls[0].path_distance - BALL_DIAMETER) if self.balls else 0.0
         new_ball = Ball(color=color, path_distance=max(0.0, new_dist))
         self.balls.insert(0, new_ball)
@@ -105,17 +120,34 @@ class Chain:
             if b.entry_t < 1.0:
                 b.entry_t = min(1.0, b.entry_t + _ENTRY_SPEED * dt)
 
-        # --- Reverse catch-up ---
+        # --- Catch-up (matching) / freeze (non-matching) ---
+        # Two-pass approach so freeze always wins over catch-up.
+        # If a matching gap and a non-matching gap both affect the same ball,
+        # the single-pass / boosted-set approach would apply whichever gap was
+        # encountered first — sometimes giving catch-up speed to balls that
+        # should be frozen, causing them to reverse into each other.
+        #
+        # Pass 1 – freeze: subtract delta from every ball beyond a non-matching
+        #   open gap so their net movement is zero (front segment stays still).
+        # Pass 2 – catch-up: subtract catch_up_extra only from balls that are
+        #   NOT already frozen (i.e. not processed in pass 1).
         catch_up_extra = self.speed * (_CATCH_UP_MULTIPLIER - 1.0) * dt
-        boosted: set[int] = set()
+        frozen: set[int] = set()
         for i, gap in enumerate(prev_gaps):
-            if gap > _GAP_THRESHOLD:
+            if gap > _GAP_THRESHOLD and self.balls[i].color != self.balls[i + 1].color:
                 for j in range(i + 1, len(self.balls)):
-                    if j not in boosted:
-                        self.balls[j].path_distance -= catch_up_extra
-                        boosted.add(j)
+                    if j not in frozen:
+                        self.balls[j].path_distance -= delta
+                        frozen.add(j)
 
-        # --- Detect newly closed gaps; queue matches instead of instant removal ---
+        for i, gap in enumerate(prev_gaps):
+            if gap > _GAP_THRESHOLD and self.balls[i].color == self.balls[i + 1].color:
+                for j in range(i + 1, len(self.balls)):
+                    if j not in frozen:
+                        self.balls[j].path_distance -= catch_up_extra
+                        frozen.add(j)  # mark as handled so later gaps don't double-apply
+
+        # --- Detect newly closed gaps ---
         if self._cascade_pending:
             return  # don't queue another cascade while one is in flight
 
@@ -125,39 +157,46 @@ class Chain:
                 continue
             gap_now = self.balls[i + 1].path_distance - self.balls[i].path_distance
             if gap_now <= _GAP_THRESHOLD:
-                snap_delta = (self.balls[i].path_distance + BALL_DIAMETER) - self.balls[i + 1].path_distance
-                for j in range(i + 1, len(self.balls)):
-                    self.balls[j].path_distance += snap_delta
-                matches = self.check_matches(i)
-                if len(matches) < MATCH_MINIMUM:
-                    matches = self.check_matches(i + 1)
-                if len(matches) >= MATCH_MINIMUM:
-                    self._cascade_pending = [self.balls[j] for j in matches]
-                    self._cascade_timer = _CASCADE_DELAY
-                    self._cascade_level = 1
-                    break  # one cascade at a time
+                if self.balls[i].color != self.balls[i + 1].color:
+                    # Non-matching join: rear caught up to frozen front.
+                    # Snap the rear ball (and the whole rear segment) forward so
+                    # the front segment never jumps; chain is now one piece again.
+                    old_pos = self.balls[i].path_distance
+                    self.balls[i].path_distance = self.balls[i + 1].path_distance - BALL_DIAMETER
+                    snap_amount = self.balls[i].path_distance - old_pos
+                    for k in range(i):
+                        self.balls[k].path_distance += snap_amount
+                else:
+                    # Matching join: snap front segment into perfect alignment then
+                    # check whether a combo formed.
+                    snap_delta = (self.balls[i].path_distance + BALL_DIAMETER) - self.balls[i + 1].path_distance
+                    for j in range(i + 1, len(self.balls)):
+                        self.balls[j].path_distance += snap_delta
+                    matches = self.check_matches(i)
+                    if len(matches) < MATCH_MINIMUM:
+                        matches = self.check_matches(i + 1)
+                    if len(matches) >= MATCH_MINIMUM:
+                        self._cascade_pending = [self.balls[j] for j in matches]
+                        self._cascade_timer = _CASCADE_DELAY
+                        self._cascade_level = self._next_cascade_level
+                        self._next_cascade_level = 1
+                        break  # one cascade at a time
 
     def _fire_cascade(self) -> None:
-        """Remove the queued cascade balls and check for a follow-up match."""
+        """Remove the queued cascade balls.
+        The gap left behind is detected by advance(): if the colours match across
+        it the front segment catches up, the gap closes, and the cycle repeats."""
         pending_ids = {id(b) for b in self._cascade_pending}
         indices = [i for i, b in enumerate(self.balls) if id(b) in pending_ids]
         # Record pops for the particle system and score
         for i in indices:
             self.recent_pops.append((self.balls[i].path_distance, self.balls[i].color, self._cascade_level))
+        # Prime the next level before clearing so advance() can pick it up
+        self._next_cascade_level = self._cascade_level + 1
         self._cascade_pending = []
         if not indices:
             return
-        min_idx = min(indices)
         self.remove_balls(indices)
-        # Check for a new match at the junction left behind
-        for ci in (min_idx, min_idx - 1):
-            if 0 <= ci < len(self.balls):
-                matches = self.check_matches(ci)
-                if len(matches) >= MATCH_MINIMUM:
-                    self._cascade_pending = [self.balls[j] for j in matches]
-                    self._cascade_timer = _CASCADE_DELAY
-                    self._cascade_level += 1     # each follow-up cascade raises the multiplier
-                    break
 
     def front_distance(self) -> float:
         return self.balls[-1].path_distance if self.balls else 0.0
@@ -192,12 +231,48 @@ class Chain:
         else:
             ball.path_distance = self.balls[idx - 1].path_distance + BALL_DIAMETER
 
-        # Shift all balls ahead to make room (no overlap with the new ball)
-        for i in range(idx, len(self.balls)):
+        # Find the first non-matching open gap at or just before the insertion point;
+        # balls beyond it are frozen and must not be shifted.
+        freeze_at = len(self.balls)
+        for gi in range(max(0, idx - 1), len(self.balls) - 1):
+            gap = self.balls[gi + 1].path_distance - self.balls[gi].path_distance
+            if gap > _GAP_THRESHOLD and self.balls[gi].color != self.balls[gi + 1].color:
+                freeze_at = gi + 1
+                break
+
+        # Shift balls ahead to make room, stopping at the freeze boundary
+        for i in range(idx, freeze_at):
             self.balls[i].path_distance += BALL_DIAMETER
 
+        # After shifting the rear segment, check both overlap scenarios:
+        #
+        # Case A – inserted inside the rear segment (idx < freeze_at):
+        #   The shift moved every ball between idx and the freeze boundary forward
+        #   by a full diameter. If the gap to the frozen section was smaller than
+        #   2×BALL_DIAMETER, the last shifted ball now overlaps the first frozen
+        #   ball. Pull the entire rear segment (and the new ball) back far enough
+        #   to restore exactly one diameter of clearance.
+        if freeze_at > idx and freeze_at < len(self.balls):
+            gap_to_frozen = self.balls[freeze_at].path_distance - self.balls[freeze_at - 1].path_distance
+            if gap_to_frozen < BALL_DIAMETER:
+                pushback = BALL_DIAMETER - gap_to_frozen
+                ball.path_distance -= pushback
+                for k in range(freeze_at):
+                    self.balls[k].path_distance -= pushback
+
+        # Case B – inserted at or past the freeze boundary (idx >= freeze_at):
+        #   No rear-segment balls were shifted, but the new ball itself might be
+        #   placed too close to the (unshifted) frozen ball directly ahead.
+        elif idx < len(self.balls) and idx >= freeze_at:
+            gap_ahead = self.balls[idx].path_distance - ball.path_distance
+            if gap_ahead < BALL_DIAMETER:
+                pushback = BALL_DIAMETER - gap_ahead
+                ball.path_distance -= pushback
+                for k in range(idx):
+                    self.balls[k].path_distance -= pushback
+
         # Animate the nearest neighbours sliding out of the way
-        for i in range(idx, min(idx + _ANIM_BALLS, len(self.balls))):
+        for i in range(idx, min(idx + _ANIM_BALLS, freeze_at)):
             self.balls[i].path_offset = -BALL_DIAMETER
 
         # Record fired position for the entry animation
@@ -234,6 +309,7 @@ class Chain:
             self._cascade_pending = [self.balls[j] for j in indices]
             self._cascade_timer = 1.0 / _ENTRY_SPEED  # wait for entry anim (~0.12 s)
             self._cascade_level = 1
+            self._next_cascade_level = 1
 
     def remove_balls(self, indices: list[int]) -> None:
         """Remove balls at the given indices.

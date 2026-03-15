@@ -13,10 +13,10 @@ _RECOIL_DECAY = 1.0 / 0.14  # recoil-to-rest in ~0.14 s
 
 
 class Frog:
-    def __init__(self, pos=None):
+    def __init__(self, pos=None, color_pool: list[str] | None = None):
         self.x, self.y = pos if pos is not None else PATH_CENTER
         self.angle: float = 0.0  # radians, aim direction
-        self.available_colors: list[str] = list(COLOR_NAMES)
+        self.available_colors: list[str] = list(color_pool) if color_pool is not None else list(COLOR_NAMES)
         self.current_ball: Ball = self._new_ball()
         self.next_ball: Ball = self._new_ball()
         self._recoil_t: float = 0.0  # 1 → 0 over the recoil duration

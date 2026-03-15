@@ -464,6 +464,68 @@ class Renderer:
             self.screen.blit(txt, txt.get_rect(center=rect.center))
 
     # ------------------------------------------------------------------ #
+    # Cheat-code menu                                                      #
+    # ------------------------------------------------------------------ #
+
+    _CHEAT_INPUT_W = 360
+    _CHEAT_INPUT_H = 52
+
+    _CHEAT_DESCRIPTIONS = {
+        "GODMODE":   "No lose condition",
+        "SLOWMO":    "Chain at 25% speed",
+        "MAGNET":    "Fired balls home in on chain",
+        "FASTBALL":  "Balls travel 3x faster",
+        "MULTISHOT": "Every shot fires 3 balls",
+        "RAINBOW":   "Fired balls auto-match color",
+        "RESET":     "Clear all active cheats",
+    }
+
+    def draw_cheat_menu(self, active_cheats: set, input_text: str, message: str) -> None:
+        title = self.font_large.render("CHEAT CODES", True, (210, 80, 80))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 90)))
+
+        # Input box
+        box_x = (SCREEN_WIDTH - self._CHEAT_INPUT_W) // 2
+        box_y = 145
+        box_rect = pygame.Rect(box_x, box_y, self._CHEAT_INPUT_W, self._CHEAT_INPUT_H)
+        pygame.draw.rect(self.screen, (20, 20, 30), box_rect, border_radius=8)
+        pygame.draw.rect(self.screen, (180, 80, 80), box_rect, 2, border_radius=8)
+        cursor = "|" if (pygame.time.get_ticks() // 530) % 2 == 0 else " "
+        input_surf = self.font_med.render(input_text + cursor, True, (220, 220, 220))
+        self.screen.blit(input_surf, input_surf.get_rect(center=box_rect.center))
+
+        # Feedback message
+        if message:
+            is_on  = message.endswith("[ON]") or message == "ALL CHEATS CLEARED"
+            is_err = message == "UNKNOWN CODE"
+            color  = (100, 220, 100) if is_on else (220, 100, 100) if is_err else (180, 180, 100)
+            msg_surf = self.font_small.render(message, True, color)
+            self.screen.blit(msg_surf, msg_surf.get_rect(center=(SCREEN_WIDTH // 2, box_y + self._CHEAT_INPUT_H + 20)))
+
+        # Unified code list — always visible; active codes are highlighted
+        y = box_y + self._CHEAT_INPUT_H + 46
+        for code, desc in self._CHEAT_DESCRIPTIONS.items():
+            is_active = code in active_cheats
+            if is_active:
+                prefix     = "ON  "
+                code_color = (230, 100, 100)
+                desc_color = (170, 65, 65)
+            else:
+                prefix     = "        "
+                code_color = (95, 95, 95)
+                desc_color = (65, 65, 65)
+            code_surf = self.font_small.render(f"{prefix}{code}", True, code_color)
+            desc_surf = self.font_small.render(f"  —  {desc}", True, desc_color)
+            total_w   = code_surf.get_width() + desc_surf.get_width()
+            x0        = (SCREEN_WIDTH - total_w) // 2
+            self.screen.blit(code_surf, (x0, y))
+            self.screen.blit(desc_surf, (x0 + code_surf.get_width(), y))
+            y += code_surf.get_height() + 5
+
+        hint = self.font_small.render("type code  +  ENTER  to toggle     ESC  ·  back", True, (120, 120, 120))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
+
+    # ------------------------------------------------------------------ #
     # Records screen                                                       #
     # ------------------------------------------------------------------ #
 
