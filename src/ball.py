@@ -80,6 +80,7 @@ class ScorePopup:
 class Ball:
     color: str
     radius: int = BALL_RADIUS
+    is_bomb: bool = False
 
     # For chain balls
     path_distance: float = 0.0

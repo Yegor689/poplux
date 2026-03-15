@@ -467,17 +467,54 @@ class Game:
                     hit_idx = i
 
             if hit_idx is not None:
-                if "RAINBOW" in self.active_cheats:
-                    fired.color = self.chain.balls[hit_idx].color
-                path_dist = self.chain.balls[hit_idx].path_distance
-                idx = self.chain.insert(fired, path_dist)
-                matches = self.chain.check_matches(idx)
-                if len(matches) >= MATCH_MINIMUM:
-                    self.chain.queue_match(matches)
+                if fired.is_bomb:
+                    self._explode_bomb(hit_idx)
+                else:
+                    if "RAINBOW" in self.active_cheats:
+                        fired.color = self.chain.balls[hit_idx].color
+                    path_dist = self.chain.balls[hit_idx].path_distance
+                    idx = self.chain.insert(fired, path_dist)
+                    matches = self.chain.check_matches(idx)
+                    if len(matches) >= MATCH_MINIMUM:
+                        self.chain.queue_match(matches)
                 to_remove.append(fired)
 
         for b in to_remove:
             self.fired_balls.remove(b)
+
+    def _explode_bomb(self, hit_idx: int) -> None:
+        """Destroy up to 3 balls on each side of hit_idx, spawn particles and popup."""
+        lo = max(0, hit_idx - 3)
+        hi = min(len(self.chain.balls) - 1, hit_idx + 3)
+        indices = list(range(lo, hi + 1))
+        positions = []
+        for i in indices:
+            b = self.chain.balls[i]
+            cx, cy = self.path.point_at(b.path_distance)
+            positions.append((cx, cy))
+            self.score += 5
+            base = BALL_COLORS.get(b.color, (200, 200, 200))
+            light = tuple(min(255, c + 60) for c in base)
+            for _ in range(self._PARTICLE_COUNT):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(*self._PARTICLE_SPEED) * 1.4
+                life = random.uniform(*self._PARTICLE_LIFE)
+                color = random.choice([base, light, (255, 140, 0), (255, 220, 60)])
+                self.particles.append(Particle(
+                    x=cx, y=cy,
+                    dx=math.cos(angle) * speed,
+                    dy=math.sin(angle) * speed,
+                    lifetime=life, max_lifetime=life,
+                    color=color, radius=self._PARTICLE_R,
+                ))
+        if positions:
+            cx = sum(p[0] for p in positions) / len(positions)
+            cy = sum(p[1] for p in positions) / len(positions)
+            total = len(indices) * 5
+            self.score_popups.append(
+                ScorePopup(cx, cy, f"BOOM +{total}", (255, 140, 0), 1.4, 1.4)
+            )
+        self.chain.remove_balls(indices)
 
     def _check_coin_collisions(self) -> None:
         if not self.coins or not self.fired_balls:

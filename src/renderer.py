@@ -114,6 +114,17 @@ class Renderer:
                                          (255, 245, 140, alpha))
             self.screen.blit(surf, (cx - sc, cy - sc))
 
+    def _draw_bomb_ball(self, surface: pygame.Surface, cx: int, cy: int, radius: int) -> None:
+        self._aa_circle(surface, (255, 90, 0),   (cx, cy), radius + 3)          # orange glow halo
+        self._aa_circle(surface, (18, 18, 18),   (cx, cy), radius)              # near-black body
+        self._aa_circle(surface, (70, 35, 0),    (cx, cy), int(radius * 0.72))  # dark amber mid
+        self._aa_circle(surface, (255, 130, 0),  (cx, cy), int(radius * 0.44))  # bright core
+        self._aa_circle(surface, (255, 230, 120),(cx, cy), int(radius * 0.22))  # white-hot centre
+        pygame.gfxdraw.aacircle(surface, cx, cy, radius, (255, 60, 0))          # orange rim
+        r2 = max(2, radius // 3)
+        pygame.draw.line(surface, (255, 200, 0), (cx - r2, cy), (cx + r2, cy), 2)
+        pygame.draw.line(surface, (255, 200, 0), (cx, cy - r2), (cx, cy + r2), 2)
+
     def draw_chain(self, chain, path) -> None:
         for ball in chain.balls:
             cx, cy = path.point_at(ball.path_distance + ball.path_offset)
@@ -141,7 +152,10 @@ class Renderer:
     def draw_fired_balls(self, fired_balls: list) -> None:
         for ball in fired_balls:
             if ball.active:
-                self._draw_ball(self.screen, ball.color, int(ball.x), int(ball.y), ball.radius)
+                if ball.is_bomb:
+                    self._draw_bomb_ball(self.screen, int(ball.x), int(ball.y), ball.radius)
+                else:
+                    self._draw_ball(self.screen, ball.color, int(ball.x), int(ball.y), ball.radius)
 
     def draw_frog(self, frog) -> None:
         cx = int(frog.x - math.cos(frog.angle) * frog.recoil)
@@ -236,11 +250,17 @@ class Renderer:
         bx, by = pt(-R * 0.65, 0)
         self._aa_circle(self.screen, (12, 14, 20), (bx, by), int(BALL_RADIUS * 0.75))
         pygame.gfxdraw.aacircle(self.screen, bx, by, int(BALL_RADIUS * 0.75), AMBER2)
-        self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
+        if frog.next_ball.is_bomb:
+            self._draw_bomb_ball(self.screen, bx, by, int(BALL_RADIUS * 0.58))
+        else:
+            self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
 
         # --- Current ball at cannon tip ---
         mx, my = pt(R * 2.5 + BALL_RADIUS + 3, 0)
-        self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
+        if frog.current_ball.is_bomb:
+            self._draw_bomb_ball(self.screen, mx, my, frog.current_ball.radius)
+        else:
+            self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
 
     def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False) -> None:
         # --- Score — top-left, prominent ---
