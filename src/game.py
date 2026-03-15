@@ -7,7 +7,7 @@ from frog import Frog
 from chain import Chain
 from renderer import Renderer
 from background import Background
-from ball import Ball, Particle, ScorePopup
+from ball import Ball, Coin, Particle, ScorePopup
 import records as records_store
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
@@ -42,6 +42,9 @@ class Game:
         self._cheat_message: str = ""
         self._endless_mode: bool = False
         self._endless_base_speed: float = 0.0
+        self.coins: list[Coin] = []
+        self.coin_spots: list = []
+        self._coin_timer: float = 20.0
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -65,6 +68,9 @@ class Game:
 
         self._endless_mode = False
         self._pre_pause_state = "playing"
+        self.coins = []
+        self.coin_spots = cfg.get("coin_spots", [])
+        self._coin_timer = random.uniform(15.0, 25.0)
         self.state = "playing"
 
     _COMBO_TEST_COLORS = list(BALL_COLORS.keys())[:2]  # first two colours only
@@ -125,6 +131,9 @@ class Game:
         self._endless_mode = True
         self._endless_base_speed = float(cfg["chain_speed"])
         self._pre_pause_state = "playing"
+        self.coins = []
+        self.coin_spots = cfg.get("coin_spots", [])
+        self._coin_timer = random.uniform(15.0, 25.0)
         self.state = "playing"
 
     def _submit_cheat(self) -> None:
@@ -348,6 +357,20 @@ class Game:
         for p in self.particles:
             p.update(dt)
 
+        for c in self.coins:
+            c.update(dt)
+        self.coins = [c for c in self.coins if c.alive]
+
+        if self.coin_spots:
+            self._coin_timer -= dt
+            if self._coin_timer <= 0:
+                occupied = {(c.x, c.y) for c in self.coins}
+                available = [s for s in self.coin_spots if tuple(s) not in occupied]
+                if available:
+                    spot = random.choice(available)
+                    self.coins.append(Coin(x=float(spot[0]), y=float(spot[1])))
+                self._coin_timer = random.uniform(15.0, 25.0)
+
         self.score_popups = [p for p in self.score_popups if p.alive]
         for p in self.score_popups:
             p.update(dt)
@@ -402,6 +425,7 @@ class Game:
             self.fired_balls.remove(b)
 
         self._check_collisions()
+        self._check_coin_collisions()
 
         if "GODMODE" in self.active_cheats:
             while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
@@ -455,6 +479,29 @@ class Game:
         for b in to_remove:
             self.fired_balls.remove(b)
 
+    def _check_coin_collisions(self) -> None:
+        if not self.coins or not self.fired_balls:
+            return
+        coins_hit = []
+        balls_used = []
+        for coin in self.coins:
+            for ball in self.fired_balls:
+                if ball in balls_used:
+                    continue
+                dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
+                if dist_sq <= (ball.radius + coin.radius) ** 2:
+                    self.score += 10
+                    self.score_popups.append(
+                        ScorePopup(coin.x, coin.y, "+10", (255, 215, 0), 1.1, 1.1)
+                    )
+                    coins_hit.append(coin)
+                    balls_used.append(ball)
+                    break
+        for c in coins_hit:
+            self.coins.remove(c)
+        for b in balls_used:
+            self.fired_balls.remove(b)
+
     def _render(self) -> None:
         mouse_pos = self._frame_mouse
         self.background.draw(self._logical)
@@ -469,6 +516,7 @@ class Game:
             self.renderer.draw_records(records_store.top())
         else:
             self.renderer.draw_path(self.path)
+            self.renderer.draw_coins(self.coins)
             self.renderer.draw_chain(self.chain, self.path)
             self.renderer.draw_particles(self.particles)
             self.renderer.draw_score_popups(self.score_popups)

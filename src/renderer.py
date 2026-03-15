@@ -98,6 +98,22 @@ class Renderer:
                         (cx - radius // 3, cy - radius // 3), max(2, radius // 4))
         pygame.gfxdraw.aacircle(surface, cx, cy, radius, (0, 0, 0))                                   # outline
 
+    def draw_coins(self, coins: list) -> None:
+        for coin in coins:
+            cx, cy = int(coin.x), int(coin.y)
+            r = max(8, int(coin.radius + math.sin(coin.pulse) * 2))
+            alpha = coin.alpha
+            size = (r + 6) * 2
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            sc = r + 6
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 4, (255, 215, 0, alpha // 4))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 2, (255, 215, 0, alpha // 2))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r, (255, 215, 0, alpha))
+            pygame.gfxdraw.aacircle(surf, sc, sc, r, (180, 140, 0, alpha))
+            pygame.gfxdraw.filled_circle(surf, sc - r // 4, sc - r // 4, r // 3,
+                                         (255, 245, 140, alpha))
+            self.screen.blit(surf, (cx - sc, cy - sc))
+
     def draw_chain(self, chain, path) -> None:
         for ball in chain.balls:
             cx, cy = path.point_at(ball.path_distance + ball.path_offset)

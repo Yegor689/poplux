@@ -3,6 +3,31 @@ from settings import BALL_RADIUS
 
 
 @dataclass
+class Coin:
+    x: float
+    y: float
+    radius: int = 14
+    lifetime: float = 12.0
+    max_lifetime: float = 12.0
+    pulse: float = 0.0
+
+    def update(self, dt: float) -> None:
+        self.lifetime -= dt
+        self.pulse += dt * 3.0
+
+    @property
+    def alive(self) -> bool:
+        return self.lifetime > 0
+
+    @property
+    def alpha(self) -> int:
+        t = self.lifetime / self.max_lifetime
+        if t < 0.15:
+            return int(255 * t / 0.15)
+        return 255
+
+
+@dataclass
 class Particle:
     x: float
     y: float
