@@ -470,7 +470,7 @@ class Game:
                 if fired.is_bomb:
                     self._explode_bomb(hit_idx)
                 else:
-                    if "RAINBOW" in self.active_cheats:
+                    if fired.is_rainbow or "RAINBOW" in self.active_cheats:
                         fired.color = self.chain.balls[hit_idx].color
                     path_dist = self.chain.balls[hit_idx].path_distance
                     idx = self.chain.insert(fired, path_dist)

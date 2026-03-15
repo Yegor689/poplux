@@ -114,6 +114,27 @@ class Renderer:
                                          (255, 245, 140, alpha))
             self.screen.blit(surf, (cx - sc, cy - sc))
 
+    _RAINBOW_BANDS = [
+        (255, 60,  60),   # red
+        (255, 165,  0),   # orange
+        (255, 230,  0),   # yellow
+        (60,  210, 60),   # green
+        (60,  130, 255),  # blue
+        (180,  60, 255),  # violet
+    ]
+
+    def _draw_rainbow_ball(self, surface: pygame.Surface, cx: int, cy: int, radius: int) -> None:
+        bands = self._RAINBOW_BANDS
+        step = max(1, radius // len(bands))
+        for i, color in enumerate(reversed(bands)):
+            r = radius - i * step
+            if r > 0:
+                self._aa_circle(surface, color, (cx, cy), r)
+        # white specular
+        self._aa_circle(surface, (255, 255, 255),
+                        (cx - radius // 3, cy - radius // 3), max(2, radius // 4))
+        pygame.gfxdraw.aacircle(surface, cx, cy, radius, (255, 255, 255))
+
     def _draw_bomb_ball(self, surface: pygame.Surface, cx: int, cy: int, radius: int) -> None:
         self._aa_circle(surface, (255, 90, 0),   (cx, cy), radius + 3)          # orange glow halo
         self._aa_circle(surface, (18, 18, 18),   (cx, cy), radius)              # near-black body
@@ -154,6 +175,8 @@ class Renderer:
             if ball.active:
                 if ball.is_bomb:
                     self._draw_bomb_ball(self.screen, int(ball.x), int(ball.y), ball.radius)
+                elif ball.is_rainbow:
+                    self._draw_rainbow_ball(self.screen, int(ball.x), int(ball.y), ball.radius)
                 else:
                     self._draw_ball(self.screen, ball.color, int(ball.x), int(ball.y), ball.radius)
 
@@ -252,6 +275,8 @@ class Renderer:
         pygame.gfxdraw.aacircle(self.screen, bx, by, int(BALL_RADIUS * 0.75), AMBER2)
         if frog.next_ball.is_bomb:
             self._draw_bomb_ball(self.screen, bx, by, int(BALL_RADIUS * 0.58))
+        elif frog.next_ball.is_rainbow:
+            self._draw_rainbow_ball(self.screen, bx, by, int(BALL_RADIUS * 0.58))
         else:
             self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
 
@@ -259,6 +284,8 @@ class Renderer:
         mx, my = pt(R * 2.5 + BALL_RADIUS + 3, 0)
         if frog.current_ball.is_bomb:
             self._draw_bomb_ball(self.screen, mx, my, frog.current_ball.radius)
+        elif frog.current_ball.is_rainbow:
+            self._draw_rainbow_ball(self.screen, mx, my, frog.current_ball.radius)
         else:
             self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
 

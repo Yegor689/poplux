@@ -10,7 +10,8 @@ COLOR_NAMES = list(BALL_COLORS.keys())
 
 _RECOIL_MAX   = 9.0          # pixels of kick-back
 _RECOIL_DECAY = 1.0 / 0.14  # recoil-to-rest in ~0.14 s
-_BOMB_CHANCE  = 0.10         # probability any new ball is a bomb
+_BOMB_CHANCE    = 0.05  # probability any new ball is a bomb
+_RAINBOW_CHANCE = 0.05  # probability any new ball is a rainbow
 
 
 class Frog:
@@ -34,8 +35,10 @@ class Frog:
 
     def _new_ball(self) -> Ball:
         pool = self.available_colors if self.available_colors else COLOR_NAMES
-        is_bomb = random.random() < _BOMB_CHANCE
-        return Ball(color=random.choice(pool), is_bomb=is_bomb)
+        r = random.random()
+        is_bomb    = r < _BOMB_CHANCE
+        is_rainbow = not is_bomb and r < _BOMB_CHANCE + _RAINBOW_CHANCE
+        return Ball(color=random.choice(pool), is_bomb=is_bomb, is_rainbow=is_rainbow)
 
     def update_available_colors(self, active_colors: set[str]) -> None:
         """Remove exhausted colors from the generation pool. Never empties it mid-game."""
@@ -68,3 +71,4 @@ class Frog:
         self.current_ball = self.next_ball
         self.next_ball = self._new_ball()
         return ball
+
