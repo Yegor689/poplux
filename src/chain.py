@@ -129,29 +129,36 @@ class Chain:
                 b.entry_t = min(1.0, b.entry_t + _ENTRY_SPEED * dt)
 
         # --- Catch-up (matching) / freeze (non-matching) ---
-        # Two-pass approach so freeze always wins over catch-up.
-        # If a matching gap and a non-matching gap both affect the same ball,
-        # the single-pass / boosted-set approach would apply whichever gap was
-        # encountered first — sometimes giving catch-up speed to balls that
-        # should be frozen, causing them to reverse into each other.
+        # Two-pass approach so freeze always wins over catch-up for the same
+        # gap boundary, while still letting matching gaps that are wholly
+        # inside a frozen segment close normally.
         #
-        # Pass 1 – freeze: subtract delta from every ball beyond a non-matching
-        #   open gap so their net movement is zero (front segment stays still).
-        # Pass 2 – catch-up: subtract catch_up_extra only from balls that are
-        #   NOT already frozen (i.e. not processed in pass 1).
+        # Pass 1 – freeze: for each non-matching open gap, subtract delta from
+        #   every ball ahead so their net movement is zero.  Also record the
+        #   *nearest* (rightmost) non-matching gap that froze each ball; later
+        #   non-matching gaps overwrite earlier ones for balls they also cover.
+        # Pass 2 – catch-up: for each matching open gap at index i, subtract
+        #   catch_up_extra from balls ahead UNLESS the nearest freeze source
+        #   for that ball is at index >= i, meaning a non-matching gap sits
+        #   between the matching gap and the ball (freeze wins).  When the
+        #   nearest freeze source is *behind* the matching gap (< i), the
+        #   matching gap is inside the frozen segment and catch-up applies.
         catch_up_extra = self.speed * (_CATCH_UP_MULTIPLIER - 1.0) * dt
         frozen: set[int] = set()
+        frozen_by: dict[int, int] = {}   # ball index → nearest non-matching gap index
         for i, gap in enumerate(prev_gaps):
             if gap > _GAP_THRESHOLD and self.balls[i].color != self.balls[i + 1].color:
                 for j in range(i + 1, len(self.balls)):
                     if j not in frozen:
                         self.balls[j].path_distance -= delta
                         frozen.add(j)
+                    frozen_by[j] = i   # always overwrite → tracks nearest freeze source
 
         for i, gap in enumerate(prev_gaps):
             if gap > _GAP_THRESHOLD and self.balls[i].color == self.balls[i + 1].color:
                 for j in range(i + 1, len(self.balls)):
-                    if j not in frozen:
+                    nearest = frozen_by.get(j)
+                    if nearest is None or nearest < i:
                         self.balls[j].path_distance -= catch_up_extra
 
         # --- Detect newly closed gaps ---
