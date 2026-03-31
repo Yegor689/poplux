@@ -11,7 +11,7 @@
         [400, 300]
     ],
     "frog_pos": [400, 540],
-    "chain_speed": 45.0,
+    "chain_speed": 50.0,
     "total_balls": 60,
     "pre_placed": 15,
     "coin_spots": [
