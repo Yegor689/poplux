@@ -339,20 +339,20 @@ class Game:
         if self._slowdown_timer > 0:
             self._slowdown_timer = max(0.0, self._slowdown_timer - dt)
 
-        self.chain.movement_mult = 0.35 if self._slowdown_timer > 0 and "SLOWMO" not in self.active_cheats else 1.0
-        if self.state == "combo_test" and pygame.key.get_pressed()[pygame.K_s]:
-            self.chain.advance(dt * self._COMBO_SPEED_MULTIPLIER)
-        elif "SLOWMO" in self.active_cheats:
-            self.chain.advance(dt * 0.25)
-        else:
-            self.chain.advance(dt)
-
         if self.chain.bonus_popped:
             self._slowdown_timer = 15.0
             cx, cy = self.path.point_at(self.chain.bonus_pop_dist)
             self.score_popups.append(
                 ScorePopup(cx, cy, "SLOW!", (120, 220, 255), 1.6, 1.6)
             )
+
+        self.chain.movement_mult = 0.35 if self._slowdown_timer > 0 else 1.0
+        if self.state == "combo_test" and pygame.key.get_pressed()[pygame.K_s]:
+            self.chain.advance(dt * self._COMBO_SPEED_MULTIPLIER)
+        elif "SLOWMO" in self.active_cheats:
+            self.chain.advance(dt * 0.25)
+        else:
+            self.chain.advance(dt)
 
         if self._endless_mode:
             # Speed ramps up continuously: +50% per minute, capped at 4× base
@@ -367,9 +367,9 @@ class Game:
         active |= {b.color for b in self.fired_balls if b.active}
         self.frog.update_available_colors(active)
 
-        self.particles = [p for p in self.particles if p.alive]
         for p in self.particles:
             p.update(dt)
+        self.particles = [p for p in self.particles if p.alive]
 
         for c in self.coins:
             c.update(dt)
@@ -385,9 +385,9 @@ class Game:
                     self.coins.append(Coin(x=float(spot[0]), y=float(spot[1])))
                 self._coin_timer = random.uniform(15.0, 25.0)
 
-        self.score_popups = [p for p in self.score_popups if p.alive]
         for p in self.score_popups:
             p.update(dt)
+        self.score_popups = [p for p in self.score_popups if p.alive]
 
         # Combo-test: remove balls that exit the path so they don't pile up at
         # the hole and corrupt collisions.  Re-seed the chain if it fully empties

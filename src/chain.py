@@ -96,11 +96,11 @@ class Chain:
         Front segments reverse across open gaps at _CATCH_UP_MULTIPLIER speed.
         When a gap closes, matches are queued with a _CASCADE_DELAY between pops.
         """
-        if not self.balls:
-            return
-
         self.recent_pops.clear()
         self.bonus_popped = False
+
+        if not self.balls:
+            return
 
         # --- Tick cascade timer; fire when ready ---
         if self._cascade_pending:
@@ -153,7 +153,6 @@ class Chain:
                 for j in range(i + 1, len(self.balls)):
                     if j not in frozen:
                         self.balls[j].path_distance -= catch_up_extra
-                        frozen.add(j)  # mark as handled so later gaps don't double-apply
 
         # --- Detect newly closed gaps ---
         if self._cascade_pending:
