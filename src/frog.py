@@ -41,10 +41,17 @@ class Frog:
         return Ball(color=random.choice(pool), is_bomb=is_bomb, is_rainbow=is_rainbow)
 
     def update_available_colors(self, active_colors: set[str]) -> None:
-        """Remove exhausted colors from the generation pool. Never empties it mid-game."""
+        """Remove exhausted colors from the generation pool. Never empties it mid-game.
+        Also refreshes pre-loaded balls whose color is no longer active so a ghost
+        color can't be fired after the last chain ball of that color pops."""
         updated = [c for c in COLOR_NAMES if c in active_colors]
-        if updated:
-            self.available_colors = updated
+        if not updated:
+            return
+        self.available_colors = updated
+        if self.next_ball.color not in active_colors and not (self.next_ball.is_bomb or self.next_ball.is_rainbow):
+            self.next_ball = self._new_ball()
+        if self.current_ball.color not in active_colors and not (self.current_ball.is_bomb or self.current_ball.is_rainbow):
+            self.current_ball = self._new_ball()
 
     def update(self, mouse_pos: tuple[float, float]) -> None:
         """Rotate frog to face mouse cursor."""
