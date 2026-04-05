@@ -439,7 +439,7 @@ class Renderer:
                 return li
         return None
 
-    def draw_level_select(self, mouse_pos) -> None:
+    def draw_level_select(self, mouse_pos, best_scores: dict | None = None) -> None:
         title = self.font_large.render("Select Level", True, HUD_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 65)))
 
@@ -456,13 +456,25 @@ class Renderer:
             self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + 32)))
 
             sub_surf = self.font_small.render(cfg.get("subtitle", ""), True, (180, 180, 180))
-            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 62)))
+            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 57)))
 
             balls_surf = self.font_small.render(f"{cfg['total_balls']} balls", True, (160, 200, 160))
-            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 92)))
+            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 82)))
 
-            speed_surf = self.font_small.render(f"Speed: {int(cfg['chain_speed'])} px/s", True, (160, 160, 200))
-            self.screen.blit(speed_surf, speed_surf.get_rect(center=(rect.centerx, rect.y + 116)))
+            best = (best_scores or {}).get(cfg["name"])
+            if best:
+                mins = int(best["time"]) // 60
+                secs = int(best["time"]) % 60
+                score_text = f"Best: {best['score']:,}"
+                time_text  = f"{mins}:{secs:02d}"
+                score_surf = self.font_small.render(score_text, True, (255, 220, 60))
+                time_surf  = self.font_small.render(time_text,  True, (180, 200, 180))
+                self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, rect.y + 107)))
+                self.screen.blit(time_surf,  time_surf.get_rect(center=(rect.centerx, rect.y + 127)))
+            else:
+                no_surf = self.font_small.render("No record yet", True, (100, 100, 120))
+                self.screen.blit(no_surf, no_surf.get_rect(center=(rect.centerx, rect.y + 117)))
+
 
         hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))

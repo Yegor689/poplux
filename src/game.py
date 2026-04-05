@@ -612,7 +612,7 @@ class Game:
         elif self.state == "cheat_menu":
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
-            self.renderer.draw_level_select(mouse_pos)
+            self.renderer.draw_level_select(mouse_pos, records_store.best_by_level())
         elif self.state == "records":
             self.renderer.draw_records(records_store.top())
         else:

@@ -36,3 +36,13 @@ def save(level_name: str, score: int, elapsed: float) -> None:
 def top(n: int = 50) -> list[dict]:
     """Return up to n records sorted by score descending."""
     return sorted(load(), key=lambda r: r["score"], reverse=True)[:n]
+
+
+def best_by_level() -> dict[str, dict]:
+    """Return the best (highest-score) record for each level name."""
+    result: dict[str, dict] = {}
+    for r in load():
+        name = r["level"]
+        if name not in result or r["score"] > result[name]["score"]:
+            result[name] = r
+    return result
