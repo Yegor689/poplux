@@ -98,6 +98,58 @@ class Renderer:
                         (cx - radius // 3, cy - radius // 3), max(2, radius // 4))
         pygame.gfxdraw.aacircle(surface, cx, cy, radius, (0, 0, 0))                                   # outline
 
+    _AIM_LINE_DURATION = 12.0   # must match game.py
+
+    def draw_aim_powerups(self, powerups: list) -> None:
+        for p in powerups:
+            cx, cy = int(p.x), int(p.y)
+            alpha = p.alpha
+            r = p.radius + int(math.sin(p.pulse) * 2)
+            size = (r + 10) * 2
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            sc = r + 10
+            # Outer glow rings
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 8, (0, 220, 255, alpha // 6))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 5, (0, 220, 255, alpha // 3))
+            # Dark fill with cyan border
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r, (8, 18, 38, alpha))
+            pygame.gfxdraw.aacircle(surf, sc, sc, r, (0, 220, 255, alpha))
+            pygame.gfxdraw.aacircle(surf, sc, sc, r - 2, (0, 180, 220, alpha // 2))
+            # Crosshair lines (broken at centre)
+            gap = r // 3
+            lc = (0, 230, 255, alpha)
+            pygame.draw.line(surf, lc, (sc - r + 3, sc), (sc - gap, sc), 1)
+            pygame.draw.line(surf, lc, (sc + gap, sc), (sc + r - 3, sc), 1)
+            pygame.draw.line(surf, lc, (sc, sc - r + 3), (sc, sc - gap), 1)
+            pygame.draw.line(surf, lc, (sc, sc + gap), (sc, sc + r - 3), 1)
+            # Centre dot
+            pygame.gfxdraw.filled_circle(surf, sc, sc, 2, (0, 255, 255, alpha))
+            self.screen.blit(surf, (cx - sc, cy - sc))
+
+    def draw_aim_line(self, frog, aim_timer: float) -> None:
+        if aim_timer <= 0:
+            return
+        base_alpha = int(200 * min(aim_timer / 2.0, 1.0))  # fade in over 2 s
+        mouth_dist = BALL_RADIUS * 4
+        sx = frog.x + math.cos(frog.angle) * mouth_dist
+        sy = frog.y + math.sin(frog.angle) * mouth_dist
+        dx = math.cos(frog.angle)
+        dy = math.sin(frog.angle)
+        # Animate dots scrolling toward the target
+        phase = (pygame.time.get_ticks() / 120) % 22
+        line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        t = phase
+        while True:
+            x = sx + dx * t
+            y = sy + dy * t
+            if not (0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT):
+                break
+            fade = max(0.25, 1.0 - t / 700)
+            dot_alpha = int(base_alpha * fade)
+            pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), 3, (255, 255, 255, dot_alpha))
+            t += 22
+        self.screen.blit(line_surf, (0, 0))
+
     def draw_coins(self, coins: list) -> None:
         for coin in coins:
             cx, cy = int(coin.x), int(coin.y)
@@ -297,7 +349,7 @@ class Renderer:
         else:
             self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
 
-    def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False) -> None:
+    def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False, aim_timer: float = 0.0) -> None:
         # --- Score — top-left, prominent ---
         label_surf = self.font_small.render("SCORE", True, (180, 180, 100))
         value_surf = self.font_score.render(f"{score:,}", True, (255, 240, 80))
@@ -316,6 +368,21 @@ class Renderer:
         secs = int(elapsed_time) % 60
         timer_text = self.font_med.render(f"{mins}:{secs:02d}", True, HUD_COLOR)
         self.screen.blit(timer_text, timer_text.get_rect(center=(SCREEN_WIDTH // 2, 30)))
+
+        # --- Aim line indicator — bottom-right when active ---
+        if aim_timer > 0:
+            bar_w, bar_h = 110, 18
+            bx, by = SCREEN_WIDTH - bar_w - 14, SCREEN_HEIGHT - bar_h - 14
+            fill_w = int(bar_w * aim_timer / self._AIM_LINE_DURATION)
+            backing = pygame.Surface((bar_w + 8, bar_h + 22), pygame.SRCALPHA)
+            pygame.draw.rect(backing, (0, 0, 0, 140), backing.get_rect(), border_radius=6)
+            self.screen.blit(backing, (bx - 4, by - 18))
+            label = self.font_small.render("AIM LINE", True, (0, 220, 255))
+            self.screen.blit(label, label.get_rect(centerx=bx + bar_w // 2, bottom=by - 1))
+            pygame.draw.rect(self.screen, (20, 40, 60), (bx, by, bar_w, bar_h), border_radius=4)
+            if fill_w > 0:
+                pygame.draw.rect(self.screen, (0, 200, 255), (bx, by, fill_w, bar_h), border_radius=4)
+            pygame.draw.rect(self.screen, (0, 150, 200), (bx, by, bar_w, bar_h), 1, border_radius=4)
 
         # --- Debug info — top-right (toggle with S) ---
         if show_debug:

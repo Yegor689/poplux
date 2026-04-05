@@ -7,7 +7,7 @@ from frog import Frog
 from chain import Chain
 from renderer import Renderer
 from background import Background
-from ball import Ball, Coin, Particle, ScorePopup
+from ball import Ball, Coin, Particle, ScorePopup, AimPowerup
 import records as records_store
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
@@ -46,6 +46,10 @@ class Game:
         self.coins: list[Coin] = []
         self.coin_spots: list = []
         self._coin_timer: float = 20.0
+        self.aim_powerups: list[AimPowerup] = []
+        self.aim_powerup_spots: list = []
+        self._aim_powerup_timer: float = 30.0
+        self._aim_timer: float = 0.0
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -73,6 +77,10 @@ class Game:
         self.coin_spots = cfg.get("coin_spots", [])
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
+        self.aim_powerups = []
+        self.aim_powerup_spots = cfg.get("aim_powerup_spots", [])
+        self._aim_powerup_timer = random.uniform(20.0, 35.0)
+        self._aim_timer = 0.0
         self.state = "playing"
 
     _COMBO_TEST_COLORS = list(BALL_COLORS.keys())[:2]  # first two colours only
@@ -137,6 +145,10 @@ class Game:
         self.coin_spots = cfg.get("coin_spots", [])
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
+        self.aim_powerups = []
+        self.aim_powerup_spots = cfg.get("aim_powerup_spots", [])
+        self._aim_powerup_timer = random.uniform(20.0, 35.0)
+        self._aim_timer = 0.0
         self.state = "playing"
 
     def _submit_cheat(self) -> None:
@@ -385,6 +397,23 @@ class Game:
                     self.coins.append(Coin(x=float(spot[0]), y=float(spot[1])))
                 self._coin_timer = random.uniform(15.0, 25.0)
 
+        for p in self.aim_powerups:
+            p.update(dt)
+        self.aim_powerups = [p for p in self.aim_powerups if p.alive]
+
+        if self.aim_powerup_spots:
+            self._aim_powerup_timer -= dt
+            if self._aim_powerup_timer <= 0:
+                occupied = {(p.x, p.y) for p in self.aim_powerups}
+                available = [s for s in self.aim_powerup_spots if tuple(s) not in occupied]
+                if available:
+                    spot = random.choice(available)
+                    self.aim_powerups.append(AimPowerup(x=float(spot[0]), y=float(spot[1])))
+                self._aim_powerup_timer = random.uniform(20.0, 35.0)
+
+        if self._aim_timer > 0:
+            self._aim_timer = max(0.0, self._aim_timer - dt)
+
         for p in self.score_popups:
             p.update(dt)
         self.score_popups = [p for p in self.score_popups if p.alive]
@@ -440,6 +469,7 @@ class Game:
 
         self._check_collisions()
         self._check_coin_collisions()
+        self._check_aim_powerup_collisions()
 
         if "GODMODE" in self.active_cheats:
             while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
@@ -553,6 +583,26 @@ class Game:
         for b in balls_used:
             self.fired_balls.remove(b)
 
+    def _check_aim_powerup_collisions(self) -> None:
+        """Fired balls collect aim powerups without being consumed."""
+        if not self.aim_powerups or not self.fired_balls:
+            return
+        collected = []
+        for powerup in self.aim_powerups:
+            for ball in self.fired_balls:
+                if not ball.active:
+                    continue
+                dist_sq = (ball.x - powerup.x) ** 2 + (ball.y - powerup.y) ** 2
+                if dist_sq <= (ball.radius + powerup.radius) ** 2:
+                    self._aim_timer = 12.0
+                    self.score_popups.append(
+                        ScorePopup(powerup.x, powerup.y, "AIM LINE!", (0, 220, 255), 1.3, 1.3)
+                    )
+                    collected.append(powerup)
+                    break
+        for p in collected:
+            self.aim_powerups.remove(p)
+
     def _render(self) -> None:
         mouse_pos = self._frame_mouse
         self.background.draw(self._logical)
@@ -568,10 +618,12 @@ class Game:
         else:
             self.renderer.draw_path(self.path)
             self.renderer.draw_coins(self.coins)
+            self.renderer.draw_aim_powerups(self.aim_powerups)
             self.renderer.draw_chain(self.chain, self.path)
             self.renderer.draw_particles(self.particles)
             self.renderer.draw_score_popups(self.score_popups)
             self.renderer.draw_fired_balls(self.fired_balls)
+            self.renderer.draw_aim_line(self.frog, self._aim_timer)
             self.renderer.draw_frog(self.frog)
             self.renderer.draw_hud(
                 remaining=len(self.chain.balls),
@@ -581,6 +633,7 @@ class Game:
                 elapsed_time=self.elapsed_time,
                 score=self.score,
                 show_debug=self.show_debug_hud,
+                aim_timer=self._aim_timer,
             )
             if self.state == "paused":
                 self.renderer.draw_pause_menu(mouse_pos)

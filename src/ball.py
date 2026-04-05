@@ -77,6 +77,31 @@ class ScorePopup:
 
 
 @dataclass
+class AimPowerup:
+    x: float
+    y: float
+    radius: int = 16
+    lifetime: float = 14.0
+    max_lifetime: float = 14.0
+    pulse: float = 0.0
+
+    def update(self, dt: float) -> None:
+        self.lifetime -= dt
+        self.pulse += dt * 3.5
+
+    @property
+    def alive(self) -> bool:
+        return self.lifetime > 0
+
+    @property
+    def alpha(self) -> int:
+        t = self.lifetime / self.max_lifetime
+        if t < 0.15:
+            return int(255 * t / 0.15)
+        return 255
+
+
+@dataclass
 class Ball:
     color: str
     radius: int = BALL_RADIUS
