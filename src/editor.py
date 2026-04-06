@@ -52,6 +52,25 @@ LEVELS_DIR = os.path.join(os.path.dirname(__file__), "levels")
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
+def nearest_segment(waypoints, pos):
+    """Return the index to insert AFTER (0-based) so the new point splits the
+    nearest segment.  Returns len(waypoints)-1 (append) when < 2 points exist."""
+    if len(waypoints) < 2:
+        return len(waypoints) - 1
+    best_i, best_d = 0, float("inf")
+    px, py = pos
+    for i in range(len(waypoints) - 1):
+        ax, ay = waypoints[i]
+        bx, by = waypoints[i + 1]
+        # closest point on segment AB to P
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy + 1e-9)))
+        cx, cy = ax + t * dx, ay + t * dy
+        d = math.hypot(px - cx, py - cy)
+        if d < best_d:
+            best_d, best_i = d, i
+    return best_i
+
 def nearest_wp(waypoints, pos, max_d=HIT_RADIUS):
     best_i, best_d = None, max_d
     for i, wp in enumerate(waypoints):
@@ -82,10 +101,12 @@ def draw_btn(screen, rect, label, font, hovered, active=False):
     screen.blit(t, t.get_rect(center=rect.center))
 
 # placement modes
-MODE_WP   = "waypoint"
-MODE_FROG = "frog"
-MODE_COIN = "coin"
-MODE_AIM  = "aim"
+MODE_WP     = "waypoint"   # drag existing waypoints
+MODE_EXTEND = "extend"     # append to end of path
+MODE_INSERT = "insert"     # insert into nearest segment
+MODE_FROG   = "frog"
+MODE_COIN   = "coin"
+MODE_AIM    = "aim"
 
 # ── editor ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +129,7 @@ class Editor:
         self.dragging_idx: int | None = None
         self.dragging_coin_idx: int | None = None
         self.dragging_aim_idx: int | None = None
+        self._undo_stack: list[dict] = []   # snapshots for undo
         self.mode = MODE_WP          # current placement / interaction mode
         self.dropdown_open = False
         self._loaded_file: str | None = None
@@ -192,6 +214,30 @@ class Editor:
         self._loaded_file = None
         self._save(next_filename())
 
+    # ── undo ─────────────────────────────────────────────────────────────────
+
+    def _snapshot(self):
+        self._undo_stack.append({
+            "waypoints":  list(self.waypoints),
+            "coin_spots": list(self.coin_spots),
+            "aim_spots":  list(self.aim_spots),
+            "frog_pos":   self.frog_pos,
+        })
+        if len(self._undo_stack) > 64:
+            self._undo_stack.pop(0)
+
+    def _undo(self):
+        if not self._undo_stack:
+            self._set_status("Nothing to undo.", 1.5)
+            return
+        state = self._undo_stack.pop()
+        self.waypoints  = state["waypoints"]
+        self.coin_spots = state["coin_spots"]
+        self.aim_spots  = state["aim_spots"]
+        self.frog_pos   = state["frog_pos"]
+        self._rebuild_path()
+        self._set_status("Undone.", 1.5)
+
     # ── status ───────────────────────────────────────────────────────────────
 
     def _set_status(self, msg: str, dur: float = 3.0):
@@ -243,17 +289,14 @@ class Editor:
             self._set_mode(MODE_AIM)
         elif event.key == pygame.K_w:
             self._set_mode(MODE_WP)
+        elif event.key == pygame.K_e:
+            self._set_mode(MODE_EXTEND)
+        elif event.key == pygame.K_i:
+            self._set_mode(MODE_INSERT)
         elif event.key == pygame.K_z:
-            if self.mode == MODE_WP and self.waypoints:
-                self.waypoints.pop()
-                self._rebuild_path()
-            elif self.mode == MODE_COIN and self.coin_spots:
-                self.coin_spots.pop()
-                self._set_status(f"Coin undone ({len(self.coin_spots)} total)", 1.5)
-            elif self.mode == MODE_AIM and self.aim_spots:
-                self.aim_spots.pop()
-                self._set_status(f"Aim powerup undone ({len(self.aim_spots)} total)", 1.5)
+            self._undo()
         elif event.key == pygame.K_c:
+            self._snapshot()
             self.waypoints.clear()
             self.frog_pos = None
             self.coin_spots.clear()
@@ -267,13 +310,16 @@ class Editor:
                 pygame.quit()
                 sys.exit()
 
+
     def _set_mode(self, mode: str):
         self.mode = mode
         labels = {
-            MODE_WP:   "Mode: Waypoints",
-            MODE_FROG: "Mode: Place frog — click canvas",
-            MODE_COIN: "Mode: Place coins — click to add, RClick to remove",
-            MODE_AIM:  "Mode: Place aim powerups — click to add, RClick to remove",
+            MODE_WP:     "Mode: Drag waypoints",
+            MODE_EXTEND: "Mode: Extend — click to append to end",
+            MODE_INSERT: "Mode: Insert — click to split nearest segment",
+            MODE_FROG:   "Mode: Place frog — click canvas",
+            MODE_COIN:   "Mode: Place coins — click to add, RClick to remove",
+            MODE_AIM:    "Mode: Place aim powerups — click to add, RClick to remove",
         }
         self._set_status(labels[mode], 3.0)
 
@@ -294,45 +340,60 @@ class Editor:
 
         if event.button == 1:
             if self.mode == MODE_FROG:
+                self._snapshot()
                 self.frog_pos = pos
                 self._set_mode(MODE_WP)
                 self._set_status("Frog position set.")
             elif self.mode == MODE_COIN:
                 idx = nearest_wp(self.coin_spots, pos, HIT_RADIUS * 1.5)
                 if idx is not None:
+                    self._snapshot()
                     self.dragging_coin_idx = idx
                 else:
+                    self._snapshot()
                     self.coin_spots.append(pos)
                     self._set_status(f"Coin added ({len(self.coin_spots)} total)", 1.5)
             elif self.mode == MODE_AIM:
                 idx = nearest_wp(self.aim_spots, pos, HIT_RADIUS * 1.5)
                 if idx is not None:
+                    self._snapshot()
                     self.dragging_aim_idx = idx
                 else:
+                    self._snapshot()
                     self.aim_spots.append(pos)
                     self._set_status(f"Aim powerup added ({len(self.aim_spots)} total)", 1.5)
-            else:  # MODE_WP
+            elif self.mode == MODE_EXTEND:
+                self._snapshot()
+                self.waypoints.append(pos)
+                self._rebuild_path()
+            elif self.mode == MODE_INSERT:
+                self._snapshot()
+                insert_after = nearest_segment(self.waypoints, pos)
+                self.waypoints.insert(insert_after + 1, pos)
+                self._rebuild_path()
+            else:  # MODE_WP — drag only
                 idx = nearest_wp(self.waypoints, pos)
                 if idx is not None:
+                    self._snapshot()
                     self.dragging_idx = idx
-                else:
-                    self.waypoints.append(pos)
-                    self._rebuild_path()
 
         elif event.button == 3:
             if self.mode == MODE_COIN:
                 idx = nearest_wp(self.coin_spots, pos, HIT_RADIUS * 1.5)
                 if idx is not None:
+                    self._snapshot()
                     self.coin_spots.pop(idx)
                     self._set_status(f"Coin removed ({len(self.coin_spots)} total)", 1.5)
             elif self.mode == MODE_AIM:
                 idx = nearest_wp(self.aim_spots, pos, HIT_RADIUS * 1.5)
                 if idx is not None:
+                    self._snapshot()
                     self.aim_spots.pop(idx)
                     self._set_status(f"Aim powerup removed ({len(self.aim_spots)} total)", 1.5)
-            else:  # MODE_WP
+            elif self.mode in (MODE_WP, MODE_EXTEND, MODE_INSERT):
                 idx = nearest_wp(self.waypoints, pos)
                 if idx is not None:
+                    self._snapshot()
                     self.waypoints.pop(idx)
                     self._rebuild_path()
 
@@ -493,21 +554,35 @@ class Editor:
 
         self._hline(screen, px, y); y += 8
 
-        # mode buttons
-        self._row(screen, px, y, "MODE", C["dim"]); y += 18
-        modes = [
-            (MODE_WP,   "W  Waypoints",  C["wp"]),
+        # mode buttons — waypoints
+        self._row(screen, px, y, "WAYPOINTS", C["dim"]); y += 18
+        for mode_key, label in (
+            (MODE_WP,     "W  Drag"),
+            (MODE_EXTEND, "E  Extend"),
+            (MODE_INSERT, "I  Insert"),
+        ):
+            active = self.mode == mode_key
+            r = pygame.Rect(px + 6, y, panel_w - 12, 22)
+            pygame.draw.rect(screen, (30, 50, 80) if active else C["btn"], r, border_radius=4)
+            pygame.draw.rect(screen, C["wp"] if active else C["sep"], r, 1, border_radius=4)
+            t = self.font_sm.render(label, True, C["wp"] if active else C["text"])
+            screen.blit(t, t.get_rect(midleft=(r.x + 6, r.centery)))
+            self._ui_hits.append((r, lambda m=mode_key: self._set_mode(m)))
+            y += 26
+
+        self._hline(screen, px, y); y += 8
+
+        # mode buttons — objects
+        self._row(screen, px, y, "OBJECTS", C["dim"]); y += 18
+        for mode_key, label, col in (
             (MODE_FROG, "F  Frog",       C["frog"]),
             (MODE_COIN, "G  Coins",      C["coin"]),
             (MODE_AIM,  "A  Aim pwrup",  C["aim"]),
-        ]
-        for mode_key, label, col in modes:
+        ):
             active = self.mode == mode_key
             r = pygame.Rect(px + 6, y, panel_w - 12, 22)
-            bg = (30, 60, 30) if active else C["btn"]
-            border = col if active else C["sep"]
-            pygame.draw.rect(screen, bg, r, border_radius=4)
-            pygame.draw.rect(screen, border, r, 1, border_radius=4)
+            pygame.draw.rect(screen, (30, 60, 30) if active else C["btn"], r, border_radius=4)
+            pygame.draw.rect(screen, col if active else C["sep"], r, 1, border_radius=4)
             t = self.font_sm.render(label, True, col if active else C["text"])
             screen.blit(t, t.get_rect(midleft=(r.x + 6, r.centery)))
             self._ui_hits.append((r, lambda m=mode_key: self._set_mode(m)))
@@ -569,13 +644,13 @@ class Editor:
 
         # controls reference
         self._hline(screen, px, y); y += 6
-        for line in ("LClick  add / drag",
-                     "RClick  delete item",
-                     "Z       undo last wp",
+        for line in ("W  drag  E  extend  I  insert",
+                     "RClick  delete waypoint",
+                     "Z       undo",
                      "S       save",
                      "Shift+S  save new",
                      "C       clear all",
-                     "ESC     mode → wp / quit"):
+                     "ESC     mode → drag / quit"):
             self._row(screen, px, y, line, C["dim"]); y += 16
 
     # ── sidebar helpers ───────────────────────────────────────────────────────
@@ -627,9 +702,11 @@ class Editor:
 
     def _draw_overlays(self, screen):
         mode_labels = {
-            MODE_FROG: ("Place FROG — click canvas", C["frog"]),
-            MODE_COIN: ("Place COIN — LClick add  RClick remove", C["coin"]),
-            MODE_AIM:  ("Place AIM POWERUP — LClick add  RClick remove", C["aim"]),
+            MODE_EXTEND: ("Extend path — click to append waypoint to end", C["wp"]),
+            MODE_INSERT: ("Insert waypoint — click to split nearest segment", C["wp_hov"]),
+            MODE_FROG:   ("Place FROG — click canvas", C["frog"]),
+            MODE_COIN:   ("Place COIN — LClick add  RClick remove", C["coin"]),
+            MODE_AIM:    ("Place AIM POWERUP — LClick add  RClick remove", C["aim"]),
         }
         if self.mode in mode_labels:
             msg, col = mode_labels[self.mode]
