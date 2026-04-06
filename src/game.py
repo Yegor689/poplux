@@ -1,5 +1,6 @@
 import sys
 import math
+import os
 import random
 import pygame
 from path import Path
@@ -9,6 +10,7 @@ from renderer import Renderer
 from background import Background
 from ball import Ball, Coin, Particle, ScorePopup, AimPowerup
 import records as records_store
+import sounds
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
     BALL_RADIUS, MATCH_MINIMUM, LEVELS, BALL_COLORS,
@@ -17,6 +19,7 @@ from settings import (
 
 class Game:
     def __init__(self):
+        sounds.init()
         pygame.display.set_caption(TITLE)
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
         self._logical = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -50,6 +53,10 @@ class Game:
         self.aim_powerup_spots: list = []
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
+        self._current_music: str = ""
+        _assets = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
+        self._music_menu    = os.path.join(_assets, "MENU.mp3")
+        self._music_ingame  = os.path.join(_assets, "IN-GAME.mp3")
 
     def _init_game_state(self, level_idx: int) -> None:
         self.current_level_idx = level_idx
@@ -170,6 +177,20 @@ class Game:
             self.active_cheats.add(code)
             self._cheat_message = f"{code}  [ARMED]" if code == "CLEARALL" else f"{code}  [ON]"
 
+    def _update_music(self) -> None:
+        if self.state == "paused":
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.pause()
+            return
+        if not pygame.mixer.music.get_busy():
+            pygame.mixer.music.unpause()
+        track = self._music_ingame if self.state in ("playing", "combo_test") else self._music_menu
+        if track != self._current_music:
+            self._current_music = track
+            pygame.mixer.music.load(track)
+            pygame.mixer.music.set_volume(0.4)
+            pygame.mixer.music.play(-1)  # -1 = loop forever
+
     def run(self) -> None:
         running = True
         while running:
@@ -179,6 +200,7 @@ class Game:
             self.background.update(dt)
             if self.state in ("playing", "combo_test"):
                 self._update(dt)
+            self._update_music()
             self._render()
         pygame.quit()
         sys.exit()
@@ -244,9 +266,12 @@ class Game:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 if self.state in ("playing", "combo_test"):
                     self.frog.swap()
+                    sounds.play("swap", 0.3)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.state == "main_menu":
                     btn = self.renderer.main_menu_button_at(mouse_pos)
+                    if btn is not None:
+                        sounds.play("menu_click", 0.4)
                     if btn == 0:
                         self._init_game_state(0)
                     elif btn == 1:
@@ -258,9 +283,11 @@ class Game:
                 elif self.state == "level_select":
                     idx = self.renderer.level_button_at(mouse_pos)
                     if idx is not None:
+                        sounds.play("menu_click", 0.4)
                         self._init_game_state(idx)
                 elif self.state in ("playing", "combo_test"):
                     ball = self.frog.shoot()
+                    sounds.play("shoot", 0.35)
                     if "FASTBALL" in self.active_cheats:
                         ball.dx *= 3.0
                         ball.dy *= 3.0
@@ -322,6 +349,10 @@ class Game:
         total = len(self.chain.recent_pops) * cascade_level
         text = f"+{total}" if cascade_level == 1 else f"+{total}  ×{cascade_level}"
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
+        if cascade_level > 1:
+            sounds.play("cascade", 0.5)
+        else:
+            sounds.play("pop", 0.45)
         life = 1.1
         self.score_popups.append(ScorePopup(cx, cy, text, color, life, life))
 
@@ -353,6 +384,7 @@ class Game:
 
         if self.chain.bonus_popped:
             self._slowdown_timer = 15.0
+            sounds.play("slowdown", 0.4)
             cx, cy = self.path.point_at(self.chain.bonus_pop_dist)
             self.score_popups.append(
                 ScorePopup(cx, cy, "SLOW!", (120, 220, 255), 1.6, 1.6)
@@ -485,12 +517,15 @@ class Game:
                 level_name = LEVELS[self.current_level_idx]["name"]
                 records_store.save(level_name, self.score, self.elapsed_time)
                 if self.current_level_idx + 1 < len(LEVELS):
+                    sounds.play("level_complete", 0.6)
                     self.state = "level_complete"
                 else:
+                    sounds.play("level_complete", 0.6)
                     self.state = "game_complete"
             elif self.chain.front_distance() >= self.path.total_length:
                 if self._endless_mode:
                     records_store.save("Endless", self.score, self.elapsed_time)
+                sounds.play("game_over", 0.5)
                 self.state = "lose"
 
     def _out_of_bounds(self, ball) -> bool:
@@ -528,6 +563,7 @@ class Game:
 
     def _explode_bomb(self, hit_idx: int) -> None:
         """Destroy up to 3 balls on each side of hit_idx, spawn particles and popup."""
+        sounds.play("bomb", 0.6)
         lo = max(0, hit_idx - 3)
         hi = min(len(self.chain.balls) - 1, hit_idx + 3)
         indices = list(range(lo, hi + 1))
@@ -572,6 +608,7 @@ class Game:
                 dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
                 if dist_sq <= (ball.radius + coin.radius) ** 2:
                     self.score += 10
+                    sounds.play("coin", 0.4)
                     self.score_popups.append(
                         ScorePopup(coin.x, coin.y, "+10", (255, 215, 0), 1.1, 1.1)
                     )
@@ -595,6 +632,7 @@ class Game:
                 dist_sq = (ball.x - powerup.x) ** 2 + (ball.y - powerup.y) ** 2
                 if dist_sq <= (ball.radius + powerup.radius) ** 2:
                     self._aim_timer = 12.0
+                    sounds.play("aim", 0.45)
                     self.score_popups.append(
                         ScorePopup(powerup.x, powerup.y, "AIM LINE!", (0, 220, 255), 1.3, 1.3)
                     )
