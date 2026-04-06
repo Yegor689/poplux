@@ -2,8 +2,8 @@ import json
 import os
 
 # Display
-SCREEN_WIDTH = 960
-SCREEN_HEIGHT = 720
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 960
 FPS = 60
 TITLE = "Poplux"
 
@@ -19,14 +19,14 @@ HOLE_COLOR = (10, 10, 10)
 HUD_COLOR = (220, 220, 220)
 
 # Gameplay
-BALL_RADIUS = 24
+BALL_RADIUS = 32
 BALL_DIAMETER = BALL_RADIUS * 2
-SHOOT_SPEED = 960.0         # fired ball speed (px/sec)
+SHOOT_SPEED = 1280.0        # fired ball speed (px/sec)
 MATCH_MINIMUM = 3           # minimum group size to pop
 MAX_SAME_IN_ROW = 2         # max consecutive same-color spawns
 
 # Path
-PATH_CENTER = (480, 360)
+PATH_CENTER = (640, 480)
 PATH_NUM_POINTS = 500
 
 _levels_dir = os.path.join(os.path.dirname(__file__), "levels")

@@ -10,10 +10,10 @@ from settings import (
 class Renderer:
     def __init__(self, screen: pygame.Surface):
         self.screen = screen
-        self.font_large = pygame.font.SysFont(None, 86)
-        self.font_med = pygame.font.SysFont(None, 43)
-        self.font_small = pygame.font.SysFont(None, 34)
-        self.font_score = pygame.font.SysFont(None, 58, bold=True)
+        self.font_large = pygame.font.SysFont(None, 115)
+        self.font_med = pygame.font.SysFont(None, 57)
+        self.font_small = pygame.font.SysFont(None, 45)
+        self.font_score = pygame.font.SysFont(None, 77, bold=True)
         self._palettes = self._build_palettes()
 
     @staticmethod
@@ -349,32 +349,52 @@ class Renderer:
         else:
             self._draw_ball(self.screen, frog.current_ball.color, mx, my, frog.current_ball.radius)
 
-    def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False, aim_timer: float = 0.0) -> None:
+    _SLOWDOWN_DURATION = 15.0   # must match game.py
+
+    def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False, aim_timer: float = 0.0, slowdown_timer: float = 0.0) -> None:
         # --- Score — top-left, prominent ---
         label_surf = self.font_small.render("SCORE", True, (180, 180, 100))
         value_surf = self.font_score.render(f"{score:,}", True, (255, 240, 80))
-        pad_x, pad_y = 17, 12
+        pad_x, pad_y = 23, 16
         box_w = max(label_surf.get_width(), value_surf.get_width()) + pad_x * 2
         box_h = label_surf.get_height() + value_surf.get_height() + pad_y * 2 + 4
         box_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
         pygame.draw.rect(box_surf, (0, 0, 0, 140), box_surf.get_rect(), border_radius=10)
         pygame.draw.rect(box_surf, (180, 160, 40, 80), box_surf.get_rect(), width=1, border_radius=10)
-        self.screen.blit(box_surf, (17, 17))
-        self.screen.blit(label_surf, label_surf.get_rect(centerx=17 + box_w // 2, top=17 + pad_y))
-        self.screen.blit(value_surf, value_surf.get_rect(centerx=17 + box_w // 2, top=17 + pad_y + label_surf.get_height() + 4))
+        self.screen.blit(box_surf, (23, 23))
+        self.screen.blit(label_surf, label_surf.get_rect(centerx=23 + box_w // 2, top=23 + pad_y))
+        self.screen.blit(value_surf, value_surf.get_rect(centerx=23 + box_w // 2, top=23 + pad_y + label_surf.get_height() + 4))
 
         # --- Timer — top-center ---
         mins = int(elapsed_time) // 60
         secs = int(elapsed_time) % 60
         timer_text = self.font_med.render(f"{mins}:{secs:02d}", True, HUD_COLOR)
-        self.screen.blit(timer_text, timer_text.get_rect(center=(SCREEN_WIDTH // 2, 36)))
+        self.screen.blit(timer_text, timer_text.get_rect(center=(SCREEN_WIDTH // 2, 48)))
+
+        # --- Slowdown indicator — bottom-right when active ---
+        if slowdown_timer > 0:
+            bar_w, bar_h = 176, 29
+            bx = SCREEN_WIDTH - bar_w - 14
+            if aim_timer > 0:
+                bx -= bar_w + 18   # sit left of aim bar
+            by = SCREEN_HEIGHT - bar_h - 14
+            fill_w = int(bar_w * slowdown_timer / self._SLOWDOWN_DURATION)
+            backing = pygame.Surface((bar_w + 13, bar_h + 35), pygame.SRCALPHA)
+            pygame.draw.rect(backing, (0, 0, 0, 140), backing.get_rect(), border_radius=6)
+            self.screen.blit(backing, (bx - 4, by - 18))
+            label = self.font_small.render("SLOWDOWN", True, (80, 180, 255))
+            self.screen.blit(label, label.get_rect(centerx=bx + bar_w // 2, bottom=by - 1))
+            pygame.draw.rect(self.screen, (10, 20, 50), (bx, by, bar_w, bar_h), border_radius=4)
+            if fill_w > 0:
+                pygame.draw.rect(self.screen, (60, 140, 255), (bx, by, fill_w, bar_h), border_radius=4)
+            pygame.draw.rect(self.screen, (40, 100, 200), (bx, by, bar_w, bar_h), 1, border_radius=4)
 
         # --- Aim line indicator — bottom-right when active ---
         if aim_timer > 0:
-            bar_w, bar_h = 132, 22
+            bar_w, bar_h = 176, 29
             bx, by = SCREEN_WIDTH - bar_w - 14, SCREEN_HEIGHT - bar_h - 14
             fill_w = int(bar_w * aim_timer / self._AIM_LINE_DURATION)
-            backing = pygame.Surface((bar_w + 10, bar_h + 26), pygame.SRCALPHA)
+            backing = pygame.Surface((bar_w + 13, bar_h + 35), pygame.SRCALPHA)
             pygame.draw.rect(backing, (0, 0, 0, 140), backing.get_rect(), border_radius=6)
             self.screen.blit(backing, (bx - 4, by - 18))
             label = self.font_small.render("AIM LINE", True, (0, 220, 255))
@@ -386,8 +406,8 @@ class Renderer:
 
         # --- Debug info — top-right (toggle with S) ---
         if show_debug:
-            debug_x = SCREEN_WIDTH - 17
-            y = 17
+            debug_x = SCREEN_WIDTH - 23
+            y = 23
             items = []
             if level_name:
                 items.append(level_name)
@@ -403,18 +423,18 @@ class Renderer:
         overlay.fill((0, 0, 0, 160))
         self.screen.blit(overlay, (0, 0))
         t = self.font_large.render(title, True, HUD_COLOR)
-        self.screen.blit(t, t.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 48)))
+        self.screen.blit(t, t.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 64)))
         if subtitle:
             s = self.font_med.render(subtitle, True, HUD_COLOR)
-            self.screen.blit(s, s.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 36)))
+            self.screen.blit(s, s.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 48)))
 
     # ------------------------------------------------------------------ #
     # Level-select screen                                                  #
     # ------------------------------------------------------------------ #
 
-    _CARD_W      = 222
-    _CARD_H      = 174
-    _CARD_GAP    = 24
+    _CARD_W      = 296
+    _CARD_H      = 260
+    _CARD_GAP    = 32
     _MAX_PER_ROW = 4
 
     def _level_card_rects(self) -> list:
@@ -422,7 +442,7 @@ class Renderer:
         n       = len(LEVELS)
         per_row = min(self._MAX_PER_ROW, n)
         cards   = []
-        y       = 144
+        y       = 192
         for row_start in range(0, n, per_row):
             row     = list(range(row_start, min(row_start + per_row, n)))
             total_w = len(row) * self._CARD_W + (len(row) - 1) * self._CARD_GAP
@@ -441,7 +461,7 @@ class Renderer:
 
     def draw_level_select(self, mouse_pos, best_scores: dict | None = None) -> None:
         title = self.font_large.render("Select Level", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 78)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 104)))
 
         for rect, li in self._level_card_rects():
             cfg     = LEVELS[li]
@@ -453,13 +473,20 @@ class Renderer:
             pygame.draw.rect(self.screen, border, rect, 2, border_radius=10)
 
             name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
-            self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + 38)))
+            self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + 51)))
 
             sub_surf = self.font_small.render(cfg.get("subtitle", ""), True, (180, 180, 180))
-            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 68)))
+            max_w = self._CARD_W - 16
+            if sub_surf.get_width() > max_w:
+                sub_surf = pygame.transform.smoothscale(
+                    sub_surf, (max_w, sub_surf.get_height()))
+            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 91)))
 
             balls_surf = self.font_small.render(f"{cfg['total_balls']} balls", True, (160, 200, 160))
-            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 98)))
+            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 125)))
+
+            speed_surf = self.font_small.render(f"{int(cfg['chain_speed'])} px/s", True, (180, 150, 210))
+            self.screen.blit(speed_surf, speed_surf.get_rect(center=(rect.centerx, rect.y + 158)))
 
             best = (best_scores or {}).get(cfg["name"])
             if best:
@@ -469,11 +496,11 @@ class Renderer:
                 time_text  = f"{mins}:{secs:02d}"
                 score_surf = self.font_small.render(score_text, True, (255, 220, 60))
                 time_surf  = self.font_small.render(time_text,  True, (180, 200, 180))
-                self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, rect.y + 128)))
-                self.screen.blit(time_surf,  time_surf.get_rect(center=(rect.centerx, rect.y + 152)))
+                self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, rect.y + 194)))
+                self.screen.blit(time_surf,  time_surf.get_rect(center=(rect.centerx, rect.y + 227)))
             else:
                 no_surf = self.font_small.render("No record yet", True, (100, 100, 120))
-                self.screen.blit(no_surf, no_surf.get_rect(center=(rect.centerx, rect.y + 140)))
+                self.screen.blit(no_surf, no_surf.get_rect(center=(rect.centerx, rect.y + 210)))
 
 
         hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
@@ -483,9 +510,9 @@ class Renderer:
     # Main menu                                                            #
     # ------------------------------------------------------------------ #
 
-    _MENU_BTN_W = 360
-    _MENU_BTN_H = 70
-    _MENU_BTN_GAP = 22
+    _MENU_BTN_W = 480
+    _MENU_BTN_H = 93
+    _MENU_BTN_GAP = 29
     _MENU_LABELS = ["PLAY", "SELECT LEVEL", "RECORDS", "QUIT"]
 
     def _main_menu_button_rects(self) -> list:
@@ -507,7 +534,7 @@ class Renderer:
 
     def draw_main_menu(self, mouse_pos) -> None:
         title = self.font_large.render("POPLUX", True, (80, 210, 80))
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 126)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 168)))
 
         rects = self._main_menu_button_rects()
         for i, (rect, label) in enumerate(zip(rects, self._MENU_LABELS)):
@@ -526,9 +553,9 @@ class Renderer:
     # Pause menu                                                           #
     # ------------------------------------------------------------------ #
 
-    _PAUSE_BTN_W = 336
-    _PAUSE_BTN_H = 65
-    _PAUSE_BTN_GAP = 19
+    _PAUSE_BTN_W = 448
+    _PAUSE_BTN_H = 87
+    _PAUSE_BTN_GAP = 25
     _PAUSE_LABELS = ["RESUME", "RESTART", "MAIN MENU"]
 
     def _pause_button_rects(self) -> list:
@@ -554,7 +581,7 @@ class Renderer:
         self.screen.blit(overlay, (0, 0))
 
         title = self.font_large.render("PAUSED", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 132)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 176)))
 
         colors      = [(35, 80, 35), (80, 60, 25), (80, 30, 30)]
         hover_colors = [(55, 130, 55), (130, 100, 40), (130, 50, 50)]
@@ -568,20 +595,20 @@ class Renderer:
             self.screen.blit(txt, txt.get_rect(center=rect.center))
 
         hint = self.font_small.render("ESC to resume", True, (120, 120, 120))
-        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 192)))
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 256)))
 
     # ------------------------------------------------------------------ #
     # Level-complete overlay                                               #
     # ------------------------------------------------------------------ #
 
-    _LC_BTN_W = 288
-    _LC_BTN_H = 62
-    _LC_BTN_GAP = 24
+    _LC_BTN_W = 384
+    _LC_BTN_H = 83
+    _LC_BTN_GAP = 32
 
     def _level_complete_button_rects(self) -> list:
         total_w = 2 * self._LC_BTN_W + self._LC_BTN_GAP
         x = (SCREEN_WIDTH - total_w) // 2
-        y = SCREEN_HEIGHT // 2 + 66
+        y = SCREEN_HEIGHT // 2 + 88
         return [
             pygame.Rect(x, y, self._LC_BTN_W, self._LC_BTN_H),
             pygame.Rect(x + self._LC_BTN_W + self._LC_BTN_GAP, y, self._LC_BTN_W, self._LC_BTN_H),
@@ -599,7 +626,7 @@ class Renderer:
         self.screen.blit(overlay, (0, 0))
 
         t = self.font_large.render("LEVEL COMPLETE!", True, (100, 240, 100))
-        self.screen.blit(t, t.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 36)))
+        self.screen.blit(t, t.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 48)))
 
         labels = [f"Next: {next_level_name}", "Main Menu"]
         colors = [(55, 130, 55), (130, 55, 55)]
@@ -617,8 +644,8 @@ class Renderer:
     # Cheat-code menu                                                      #
     # ------------------------------------------------------------------ #
 
-    _CHEAT_INPUT_W = 432
-    _CHEAT_INPUT_H = 62
+    _CHEAT_INPUT_W = 576
+    _CHEAT_INPUT_H = 83
 
     _CHEAT_DESCRIPTIONS = {
         "GODMODE":   "No lose condition",
@@ -632,11 +659,11 @@ class Renderer:
 
     def draw_cheat_menu(self, active_cheats: set, input_text: str, message: str) -> None:
         title = self.font_large.render("CHEAT CODES", True, (210, 80, 80))
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 108)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 144)))
 
         # Input box
         box_x = (SCREEN_WIDTH - self._CHEAT_INPUT_W) // 2
-        box_y = 174
+        box_y = 232
         box_rect = pygame.Rect(box_x, box_y, self._CHEAT_INPUT_W, self._CHEAT_INPUT_H)
         pygame.draw.rect(self.screen, (20, 20, 30), box_rect, border_radius=8)
         pygame.draw.rect(self.screen, (180, 80, 80), box_rect, 2, border_radius=8)
@@ -679,15 +706,15 @@ class Renderer:
     # Records screen                                                       #
     # ------------------------------------------------------------------ #
 
-    _COL_X      = (66, 372, 552, 708, 864)   # #, Level, Score, Time, Date
+    _COL_X      = (88, 496, 736, 944, 1152)  # #, Level, Score, Time, Date
     _COL_LABELS = ("#",  "LEVEL", "SCORE", "TIME", "DATE")
     _COL_ALIGN  = ("r",  "l",     "r",     "r",    "r")
-    _ROW_H      = 31
-    _TABLE_TOP  = 144
+    _ROW_H      = 41
+    _TABLE_TOP  = 192
 
     def draw_records(self, records: list) -> None:
         title = self.font_large.render("RECORDS", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 60)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 80)))
 
         if not records:
             msg = self.font_med.render("No records yet — win a level to get started!", True, (160, 160, 160))

@@ -20,7 +20,8 @@ def init() -> None:
 
     _sounds["shoot"]          = _make_shoot()
     _sounds["pop"]            = _make_pop()
-    _sounds["cascade"]        = _make_cascade()
+    for _lvl in range(1, 6):
+        _sounds[f"cascade_{_lvl}"] = _make_cascade(_lvl)
     _sounds["bomb"]           = _make_bomb()
     _sounds["coin"]           = _make_coin()
     _sounds["aim"]            = _make_aim()
@@ -37,6 +38,12 @@ def play(name: str, volume: float = 0.5) -> None:
     if snd:
         snd.set_volume(volume)
         snd.play()
+
+
+def play_cascade(level: int, volume: float = 0.5) -> None:
+    """Play a cascade sound pitched higher for each combo level."""
+    key = f"cascade_{min(level, 5)}"
+    play(key, volume)
 
 
 # --------------------------------------------------------------------------- #
@@ -104,16 +111,19 @@ def _make_pop() -> pygame.mixer.Sound:
     return _to_sound(wave)
 
 
-def _make_cascade() -> pygame.mixer.Sound:
-    """Ascending two-tone for cascades."""
+def _make_cascade(level: int = 1) -> pygame.mixer.Sound:
+    """Ascending two-tone for cascades, pitched higher each combo level."""
+    # Each level raises pitch by a perfect fourth (~1.33x), capped at level 5
+    pitch = 1.33 ** (level - 1)
+    base1, base2 = 520 * pitch, 780 * pitch
     dur = 0.18
     n = int(_RATE * dur)
     half = n // 2
     t1 = np.linspace(0, dur / 2, half, endpoint=False)
     t2 = np.linspace(0, dur / 2, n - half, endpoint=False)
     wave = np.concatenate([
-        np.sin(2 * np.pi * 520 * t1) * 0.6,
-        np.sin(2 * np.pi * 780 * t2) * 0.6,
+        np.sin(2 * np.pi * base1 * t1) * 0.6,
+        np.sin(2 * np.pi * base2 * t2) * 0.6,
     ])
     wave *= _envelope(len(wave), attack=0.002, release=0.06)
     return _to_sound(wave)

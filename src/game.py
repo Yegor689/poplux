@@ -53,12 +53,16 @@ class Game:
         self.aim_powerup_spots: list = []
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
+        self._spawn_hold: float = 0.0   # pause spawning briefly after bomb removal
         self._current_music: str = ""
         _assets = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
         self._music_menu    = os.path.join(_assets, "MENU.mp3")
         self._music_ingame  = os.path.join(_assets, "IN-GAME.mp3")
+        self._music_finish  = os.path.join(_assets, "FINISH.mp3")
+        self._music_fail    = os.path.join(_assets, "FAIL.mp3")
 
     def _init_game_state(self, level_idx: int) -> None:
+        self._current_music = ""  # force music reload on next _update_music call
         self.current_level_idx = level_idx
         cfg = LEVELS[level_idx]
         self.path = Path(cfg)
@@ -73,6 +77,7 @@ class Game:
         self.elapsed_time = 0.0
         self.score = 0
         self.show_debug_hud = False
+        self._spawn_hold = 0.0
 
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
@@ -178,18 +183,21 @@ class Game:
             self._cheat_message = f"{code}  [ARMED]" if code == "CLEARALL" else f"{code}  [ON]"
 
     def _update_music(self) -> None:
-        if self.state == "paused":
-            if pygame.mixer.music.get_busy():
-                pygame.mixer.music.pause()
-            return
-        if not pygame.mixer.music.get_busy():
-            pygame.mixer.music.unpause()
-        track = self._music_ingame if self.state in ("playing", "combo_test") else self._music_menu
+        if self.state in ("level_complete", "game_complete"):
+            track = self._music_finish
+        elif self.state == "lose":
+            track = self._music_fail
+        elif self.state in ("playing", "combo_test"):
+            track = self._music_ingame
+        else:
+            track = self._music_menu
+
         if track != self._current_music:
             self._current_music = track
             pygame.mixer.music.load(track)
             pygame.mixer.music.set_volume(0.4)
-            pygame.mixer.music.play(-1)  # -1 = loop forever
+            loops = 0 if track in (self._music_finish, self._music_fail) else -1
+            pygame.mixer.music.play(loops)
 
     def run(self) -> None:
         running = True
@@ -350,7 +358,7 @@ class Game:
         text = f"+{total}" if cascade_level == 1 else f"+{total}  ×{cascade_level}"
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
         if cascade_level > 1:
-            sounds.play("cascade", 0.5)
+            sounds.play_cascade(cascade_level, 0.5)
         else:
             sounds.play("pop", 0.45)
         life = 1.1
@@ -466,9 +474,12 @@ class Game:
                 self.chain.spawn_one()
                 self.spawned_count += 1
 
-        while self.spawned_count < self._total_balls and self.chain.needs_spawn():
-            self.chain.spawn_one()
-            self.spawned_count += 1
+        if self._spawn_hold > 0:
+            self._spawn_hold = max(0.0, self._spawn_hold - dt)
+        elif self.spawned_count < self._total_balls and self.chain.needs_spawn():
+            while self.spawned_count < self._total_balls and self.chain.needs_spawn():
+                self.chain.spawn_one()
+                self.spawned_count += 1
 
         if "MAGNET" in self.active_cheats and self.chain.balls:
             for ball in self.fired_balls:
@@ -561,12 +572,17 @@ class Game:
         for b in to_remove:
             self.fired_balls.remove(b)
 
+    _BOMB_RADIUS = BALL_RADIUS * 6  # physical blast radius in screen pixels
+
     def _explode_bomb(self, hit_idx: int) -> None:
-        """Destroy up to 3 balls on each side of hit_idx, spawn particles and popup."""
+        """Destroy balls within physical blast radius of hit_idx, spawn particles and popup."""
         sounds.play("bomb", 0.6)
-        lo = max(0, hit_idx - 3)
-        hi = min(len(self.chain.balls) - 1, hit_idx + 3)
-        indices = list(range(lo, hi + 1))
+        hx, hy = self.path.point_at(self.chain.balls[hit_idx].path_distance)
+        indices = [
+            i for i, b in enumerate(self.chain.balls)
+            if math.hypot(self.path.point_at(b.path_distance)[0] - hx,
+                          self.path.point_at(b.path_distance)[1] - hy) <= self._BOMB_RADIUS
+        ]
         positions = []
         for i in indices:
             b = self.chain.balls[i]
@@ -595,6 +611,7 @@ class Game:
                 ScorePopup(cx, cy, f"BOOM +{total}", (255, 140, 0), 1.4, 1.4)
             )
         self.chain.remove_balls(indices)
+        self._spawn_hold = 1.2  # hold off spawning for 1.2 s after bomb
 
     def _check_coin_collisions(self) -> None:
         if not self.coins or not self.fired_balls:
@@ -672,6 +689,7 @@ class Game:
                 score=self.score,
                 show_debug=self.show_debug_hud,
                 aim_timer=self._aim_timer,
+                slowdown_timer=self._slowdown_timer,
             )
             if self.state == "paused":
                 self.renderer.draw_pause_menu(mouse_pos)
