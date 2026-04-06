@@ -84,7 +84,9 @@ class Chain:
 
     def needs_spawn(self) -> bool:
         """True when the rear ball has moved far enough to fit a new ball behind it."""
-        return bool(self.balls) and self.balls[0].path_distance >= BALL_DIAMETER
+        if not self.balls:
+            return True  # chain emptied (e.g. by bomb) — allow fresh spawn at origin
+        return self.balls[0].path_distance >= BALL_DIAMETER
 
     # ------------------------------------------------------------------
     # Movement
