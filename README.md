@@ -13,7 +13,8 @@ Aim and shoot colored balls from your ship to match 3 or more in a row — clear
 | **Left-click** | Shoot |
 | **Right-click** | Swap current / next ball |
 | **ESC** | Pause / back |
-| **S** | Toggle debug HUD |
+| **S** (in-game) | Toggle debug HUD |
+| **S** (main menu) | Open cheat code menu |
 
 ---
 
@@ -28,8 +29,9 @@ Aim and shoot colored balls from your ship to match 3 or more in a row — clear
 - Special balls: **Bonus** (slowdown), **Bomb** (blast radius), **Rainbow** (auto-match)
 - Collectibles: **Coins** (+10 pts) and **Aim Line** powerups
 - Per-level best score and time records
+- Settings menu: music volume slider and colorblind mode (per-ball symbols)
 - Cheat code menu (press S on main menu)
-- Fullscreen at 1280×960 logical resolution scaled to fit any screen
+- Fullscreen at 1920×1080 (16:9)
 
 ---
 
@@ -93,7 +95,7 @@ poplux/
 ├── README.md
 ├── DESIGN.md
 ├── requirements.txt
-├── ASSETS/             # music tracks (MENU, IN-GAME, FINISH, FAIL .mp3)
+├── ASSETS/             # music tracks (MENU, IN-GAME, FINISH .mp3) + fonts (Orbitron, Exo2) + sprite strips
 └── src/
     ├── main.py         # entry point
     ├── settings.py     # constants and level loader

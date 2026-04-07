@@ -6,7 +6,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 
 **Framework:** Pygame  
 **Language:** Python 3.10+  
-**Display:** Fullscreen (logical canvas 1280×960, scaled to fill screen — 4:3)  
+**Display:** Fullscreen (logical canvas 1920×1080, 16:9). Level paths are authored at 1280×960 and scaled uniformly to fit the canvas height, centered horizontally.  
 **Ball Colors:** Red, Green, Blue, Yellow  
 **Levels:** Multiple levels defined as JSON files in `src/levels/`
 
@@ -101,7 +101,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 | `ball.py` | Ball data: color, path position, spin angle, insertion animation state, fired-ball velocity. Also defines `Coin`, `Particle`, `ScorePopup`, and `AimPowerup` dataclasses. |
 | `renderer.py` | All Pygame drawing: path, chain, ship, fired balls, coins, aim powerups, aim line, HUD, all menus and overlays. Caches the starfield background and path surface to avoid redundant per-frame draw calls. |
 | `sounds.py` | Synthesized sound effects (numpy waveforms) and streamed music track management. |
-| `settings.py` | Constants and tuning values (sizes, speeds, colors, FPS). Loads level JSON files. |
+| `settings.py` | Constants and tuning values (sizes, speeds, colors, FPS). Loads level JSON files. Hosts the `SETTINGS` singleton (music volume, colorblind mode). |
 | `records.py` | Saves and loads per-level score records as JSON. Provides `best_by_level()` for the level select screen. |
 | `editor.py` | Interactive level editor for creating and modifying level waypoints. |
 | `levels/*.json` | Level definitions: path waypoints, frog position, chain speed, ball count, coin spots, aim powerup spots. |
@@ -112,7 +112,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 
 | State | Description | Music |
 |---|---|---|
-| `main_menu` | Title screen with Play, Select Level, Records, Quit. | MENU.mp3 (loop) |
+| `main_menu` | Title screen with Play, Select Level, Records, Settings, Quit. | MENU.mp3 (loop) |
 | `level_select` | Grid of level cards with best score per level. | MENU.mp3 (loop) |
 | `playing` | Active gameplay. | IN-GAME.mp3 (loop) |
 | `paused` | Game frozen; pause menu overlay shown. | MENU.mp3 (loop) |
@@ -121,6 +121,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 | `lose` | Chain reached the hole. | IN-GAME.mp3 (loop) |
 | `records` | High score table. | MENU.mp3 (loop) |
 | `cheat_menu` | Cheat code entry screen. | MENU.mp3 (loop) |
+| `settings` | Settings screen (music volume, colorblind mode). | MENU.mp3 (loop) |
 | `combo_test` | Developer mode for testing chain combos. | IN-GAME.mp3 (loop) |
 
 ---
@@ -167,7 +168,7 @@ Synthesized at startup using numpy waveforms (no audio files required):
 | **Coins** | Pulsing gold circles with a spinning star icon and glow rings. |
 | **Aim powerup** | Pulsing cyan crosshair with glow rings. |
 | **Aim line** | Animated scrolling dotted line from ship to first collision point, drawn on a per-frame SRCALPHA surface. |
-| **HUD** | Score display (top-left), timer (top-center), aim line progress bar (bottom-right when active), optional debug info (top-right, toggle with S). |
+| **HUD** | Score display (top-left), timer (top-center), slowdown bar and aim line progress bar (bottom-right when active), optional debug info (top-right, toggle with S in-game). |
 | **Level select** | Cards showing level name, subtitle, ball count, and best score + time (or "No record yet"). |
 | **Menus / overlays** | Semi-transparent dark overlays with styled rounded-rect buttons. |
 
@@ -184,6 +185,8 @@ Zuma/
 │   ├── MENU.mp3
 │   ├── IN-GAME.mp3
 │   ├── FINISH.mp3
+│   ├── Orbitron-VariableFont_wght.ttf
+│   ├── Exo2-VariableFont_wght.ttf
 │   ├── red_sprite_fixed.png
 │   ├── green_sprite_fixed.png
 │   ├── blue_sprite_fixed.png
@@ -232,9 +235,22 @@ Accessible from the main menu (press S). Enter code and press Enter to toggle.
 
 ---
 
-## 9. Future Considerations
+## 9. Settings
+
+Accessible from the main menu via the Settings button.
+
+| Setting | Description |
+|---|---|
+| Music Volume | Slider controlling `pygame.mixer.music` volume (0–100%). Applied live. |
+| Colorblind Mode | Overlays a distinct white symbol on each ball color: ring (red), triangle (green), square (blue), diamond (yellow). |
+
+---
+
+## 10. Future Considerations
 
 - Ball sprite textures (sprite strips ready in `ASSETS/`, integration pending)
-- Additional levels
 - Difficulty scaling (chain speed increases over time within a level)
 - Additional ball colors
+- Star ratings per level (1–3 stars based on time or score)
+- Screen shake on bomb explosion
+- Chain speed warning when front ball is near the hole
