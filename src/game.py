@@ -3,7 +3,7 @@ import math
 import os
 import random
 import pygame
-from path import Path
+from path import Path, _PATH_SCALE_X, _PATH_SCALE_Y, _PATH_X_OFFSET
 from frog import Frog
 from chain import Chain
 from renderer import Renderer
@@ -13,7 +13,7 @@ import records as records_store
 import sounds
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, BG_COLOR,
-    BALL_RADIUS, MATCH_MINIMUM, LEVELS, BALL_COLORS,
+    BALL_RADIUS, MATCH_MINIMUM, LEVELS, BALL_COLORS, SETTINGS,
 )
 
 
@@ -54,19 +54,20 @@ class Game:
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
         self._spawn_hold: float = 0.0   # pause spawning briefly after bomb removal
+        self._frame_chain_positions: list = []
         self._current_music: str = ""
         _assets = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
         self._music_menu    = os.path.join(_assets, "MENU.mp3")
         self._music_ingame  = os.path.join(_assets, "IN-GAME.mp3")
         self._music_finish  = os.path.join(_assets, "FINISH.mp3")
-        self._music_fail    = os.path.join(_assets, "FAIL.mp3")
 
     def _init_game_state(self, level_idx: int) -> None:
         self._current_music = ""  # force music reload on next _update_music call
         self.current_level_idx = level_idx
         cfg = LEVELS[level_idx]
         self.path = Path(cfg)
-        frog_pos = cfg.get("frog_pos")
+        raw_frog = cfg.get("frog_pos")
+        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
         self.frog = Frog(pos=frog_pos)
         self.chain = Chain(self.path, cfg["chain_speed"])
         self.fired_balls = []
@@ -86,11 +87,11 @@ class Game:
         self._endless_mode = False
         self._pre_pause_state = "playing"
         self.coins = []
-        self.coin_spots = cfg.get("coin_spots", [])
+        self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
         self.aim_powerups = []
-        self.aim_powerup_spots = cfg.get("aim_powerup_spots", [])
+        self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
         self._aim_powerup_timer = random.uniform(20.0, 35.0)
         self._aim_timer = 0.0
         self.state = "playing"
@@ -112,7 +113,8 @@ class Game:
         cfg = LEVELS[0]
         self.current_level_idx = 0
         self.path = Path(cfg)
-        frog_pos = cfg.get("frog_pos")
+        raw_frog = cfg.get("frog_pos")
+        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
         self.frog = Frog(pos=frog_pos, color_pool=self._COMBO_TEST_COLORS)
         self.chain = Chain(self.path, cfg["chain_speed"],
                            color_pool=self._COMBO_TEST_COLORS, pair_mode=True)
@@ -136,7 +138,8 @@ class Game:
         cfg = LEVELS[0]
         self.current_level_idx = 0
         self.path = Path(cfg)
-        frog_pos = cfg.get("frog_pos")
+        raw_frog = cfg.get("frog_pos")
+        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
         self.frog = Frog(pos=frog_pos)
         self.chain = Chain(self.path, cfg["chain_speed"])
         self.fired_balls = []
@@ -154,11 +157,11 @@ class Game:
         self._endless_base_speed = float(cfg["chain_speed"])
         self._pre_pause_state = "playing"
         self.coins = []
-        self.coin_spots = cfg.get("coin_spots", [])
+        self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
         self.aim_powerups = []
-        self.aim_powerup_spots = cfg.get("aim_powerup_spots", [])
+        self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
         self._aim_powerup_timer = random.uniform(20.0, 35.0)
         self._aim_timer = 0.0
         self.state = "playing"
@@ -185,9 +188,7 @@ class Game:
     def _update_music(self) -> None:
         if self.state in ("level_complete", "game_complete"):
             track = self._music_finish
-        elif self.state == "lose":
-            track = self._music_fail
-        elif self.state in ("playing", "combo_test"):
+        elif self.state in ("playing", "combo_test", "lose"):
             track = self._music_ingame
         else:
             track = self._music_menu
@@ -195,8 +196,8 @@ class Game:
         if track != self._current_music:
             self._current_music = track
             pygame.mixer.music.load(track)
-            pygame.mixer.music.set_volume(0.4)
-            loops = 0 if track in (self._music_finish, self._music_fail) else -1
+            pygame.mixer.music.set_volume(SETTINGS.music_volume)
+            loops = 0 if track == self._music_finish else -1
             pygame.mixer.music.play(loops)
 
     def run(self) -> None:
@@ -239,6 +240,11 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+            if event.type == pygame.MOUSEMOTION and self.state == "settings":
+                if event.buttons[0]:  # left button held — drag slider
+                    action = self.renderer.settings_interact(mouse_pos, SETTINGS)
+                    if action == "volume_changed":
+                        pygame.mixer.music.set_volume(SETTINGS.music_volume)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == "main_menu":
@@ -263,6 +269,8 @@ class Game:
                     self._init_combo_test()
                 elif event.key == pygame.K_s and self.state == "main_menu":
                     self.state = "cheat_menu"
+                elif event.key == pygame.K_F9 and self.state in ("playing", "combo_test"):
+                    self.state = "game_complete"
                 elif self.state == "cheat_menu":
                     if event.key == pygame.K_BACKSPACE:
                         self._cheat_input = self._cheat_input[:-1]
@@ -287,6 +295,8 @@ class Game:
                     elif btn == 2:
                         self.state = "records"
                     elif btn == 3:
+                        self.state = "settings"
+                    elif btn == 4:
                         return False
                 elif self.state == "level_select":
                     idx = self.renderer.level_button_at(mouse_pos)
@@ -330,6 +340,10 @@ class Game:
                         self.state = "main_menu"
                 elif self.state in ("lose", "game_complete"):
                     self.state = "main_menu"
+                elif self.state == "settings":
+                    action = self.renderer.settings_interact(mouse_pos, SETTINGS)
+                    if action == "volume_changed":
+                        pygame.mixer.music.set_volume(SETTINGS.music_volume)
         if self.state in ("playing", "combo_test"):
             self.frog.update(self._frame_mouse)
         return True
@@ -364,9 +378,9 @@ class Game:
         life = 1.1
         self.score_popups.append(ScorePopup(cx, cy, text, color, life, life))
 
-        for path_dist, color_name, cascade_level in self.chain.recent_pops:
+        for (_, color_name, cascade_level), (pcx, pcy) in zip(
+                self.chain.recent_pops, positions):
             self.score += cascade_level  # 1 pt × combo multiplier per ball popped
-            cx, cy = self.path.point_at(path_dist)
             base = BALL_COLORS.get(color_name, (200, 200, 200))
             light = tuple(min(255, c + 60) for c in base)
             for _ in range(self._PARTICLE_COUNT):
@@ -375,7 +389,7 @@ class Game:
                 life  = random.uniform(*self._PARTICLE_LIFE)
                 color = random.choice([base, light])
                 self.particles.append(Particle(
-                    x=cx, y=cy,
+                    x=pcx, y=pcy,
                     dx=math.cos(angle) * speed,
                     dy=math.sin(angle) * speed,
                     lifetime=life, max_lifetime=life,
@@ -383,6 +397,14 @@ class Game:
                 ))
 
     _COMBO_SPEED_MULTIPLIER = 4.0
+
+    def _cleanup_cascade_pending(self) -> None:
+        """Remove stale _cascade_pending refs after balls are forcibly removed."""
+        if self.chain._cascade_pending:
+            live_ids = {id(b) for b in self.chain.balls}
+            self.chain._cascade_pending = [
+                b for b in self.chain._cascade_pending if id(b) in live_ids
+            ]
 
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
@@ -465,11 +487,7 @@ class Game:
             while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
                 self.chain.balls.pop()
             # If we popped balls that were cascade-pending, clear the stale refs
-            if self.chain._cascade_pending:
-                live_ids = {id(b) for b in self.chain.balls}
-                self.chain._cascade_pending = [
-                    b for b in self.chain._cascade_pending if id(b) in live_ids
-                ]
+            self._cleanup_cascade_pending()
             if self.chain.is_empty() and self.spawned_count < self._total_balls:
                 self.chain.spawn_one()
                 self.spawned_count += 1
@@ -481,12 +499,16 @@ class Game:
                 self.chain.spawn_one()
                 self.spawned_count += 1
 
+        # Build chain positions once per frame — shared by MAGNET and _check_collisions
+        self._frame_chain_positions = [
+            self.path.point_at(b.path_distance) for b in self.chain.balls
+        ]
+
         if "MAGNET" in self.active_cheats and self.chain.balls:
             for ball in self.fired_balls:
                 best_dist_sq = float('inf')
                 target = None
-                for cb in self.chain.balls:
-                    cx, cy = self.path.point_at(cb.path_distance)
+                for (cx, cy) in self._frame_chain_positions:
                     dsq = (ball.x - cx) ** 2 + (ball.y - cy) ** 2
                     if dsq < best_dist_sq:
                         best_dist_sq = dsq
@@ -517,11 +539,7 @@ class Game:
         if "GODMODE" in self.active_cheats:
             while self.chain.balls and self.chain.front_distance() >= self.path.total_length:
                 self.chain.balls.pop()
-            if self.chain._cascade_pending:
-                live_ids = {id(b) for b in self.chain.balls}
-                self.chain._cascade_pending = [
-                    b for b in self.chain._cascade_pending if id(b) in live_ids
-                ]
+            self._cleanup_cascade_pending()
 
         if self.state != "combo_test":
             if self.chain.is_empty() and self.spawned_count >= self._total_balls:
@@ -545,11 +563,12 @@ class Game:
 
     def _check_collisions(self) -> None:
         to_remove = []
+        chain_positions = self._frame_chain_positions
         for fired in self.fired_balls:
             hit_idx = None
             best_dist_sq = float('inf')
-            for i, chain_ball in enumerate(self.chain.balls):
-                cx, cy = self.path.point_at(chain_ball.path_distance)
+            for i, (chain_ball, (cx, cy)) in enumerate(
+                    zip(self.chain.balls, chain_positions)):
                 dist_sq = (fired.x - cx) ** 2 + (fired.y - cy) ** 2
                 threshold = (fired.radius + chain_ball.radius) ** 2
                 if dist_sq <= threshold and dist_sq < best_dist_sq:
@@ -578,31 +597,28 @@ class Game:
         """Destroy balls within physical blast radius of hit_idx, spawn particles and popup."""
         sounds.play("bomb", 0.6)
         hx, hy = self.path.point_at(self.chain.balls[hit_idx].path_distance)
-        indices = [
-            i for i, b in enumerate(self.chain.balls)
-            if math.hypot(self.path.point_at(b.path_distance)[0] - hx,
-                          self.path.point_at(b.path_distance)[1] - hy) <= self._BOMB_RADIUS
-        ]
+        indices = []
         positions = []
-        for i in indices:
-            b = self.chain.balls[i]
-            cx, cy = self.path.point_at(b.path_distance)
-            positions.append((cx, cy))
-            self.score += 5
-            base = BALL_COLORS.get(b.color, (200, 200, 200))
-            light = tuple(min(255, c + 60) for c in base)
-            for _ in range(self._PARTICLE_COUNT):
-                angle = random.uniform(0, 2 * math.pi)
-                speed = random.uniform(*self._PARTICLE_SPEED) * 1.4
-                life = random.uniform(*self._PARTICLE_LIFE)
-                color = random.choice([base, light, (255, 140, 0), (255, 220, 60)])
-                self.particles.append(Particle(
-                    x=cx, y=cy,
-                    dx=math.cos(angle) * speed,
-                    dy=math.sin(angle) * speed,
-                    lifetime=life, max_lifetime=life,
-                    color=color, radius=self._PARTICLE_R,
-                ))
+        for i, b in enumerate(self.chain.balls):
+            bx, by = self.path.point_at(b.path_distance)  # computed once per ball
+            if math.hypot(bx - hx, by - hy) <= self._BOMB_RADIUS:
+                indices.append(i)
+                positions.append((bx, by))
+                self.score += 5
+                base = BALL_COLORS.get(b.color, (200, 200, 200))
+                light = tuple(min(255, c + 60) for c in base)
+                for _ in range(self._PARTICLE_COUNT):
+                    angle = random.uniform(0, 2 * math.pi)
+                    speed = random.uniform(*self._PARTICLE_SPEED) * 1.4
+                    life = random.uniform(*self._PARTICLE_LIFE)
+                    color = random.choice([base, light, (255, 140, 0), (255, 220, 60)])
+                    self.particles.append(Particle(
+                        x=bx, y=by,
+                        dx=math.cos(angle) * speed,
+                        dy=math.sin(angle) * speed,
+                        lifetime=life, max_lifetime=life,
+                        color=color, radius=self._PARTICLE_R,
+                    ))
         if positions:
             cx = sum(p[0] for p in positions) / len(positions)
             cy = sum(p[1] for p in positions) / len(positions)
@@ -670,6 +686,8 @@ class Game:
             self.renderer.draw_level_select(mouse_pos, records_store.best_by_level())
         elif self.state == "records":
             self.renderer.draw_records(records_store.top())
+        elif self.state == "settings":
+            self.renderer.draw_settings(mouse_pos, SETTINGS)
         else:
             self.renderer.draw_path(self.path)
             self.renderer.draw_coins(self.coins)
@@ -694,10 +712,11 @@ class Game:
             if self.state == "paused":
                 self.renderer.draw_pause_menu(mouse_pos)
             elif self.state == "level_complete":
-                next_name = LEVELS[self.current_level_idx + 1]["name"]
+                next_idx = self.current_level_idx + 1
+                next_name = LEVELS[next_idx]["name"] if next_idx < len(LEVELS) else ""
                 self.renderer.draw_level_complete(mouse_pos, next_name)
             elif self.state == "game_complete":
-                self.renderer.draw_overlay("YOU WIN!", "All levels cleared!  Click to return to menu")
+                self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time)
             elif self.state == "lose":
                 if self._endless_mode:
                     mins = int(self.elapsed_time) // 60

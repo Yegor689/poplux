@@ -118,7 +118,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 | `paused` | Game frozen; pause menu overlay shown. | MENU.mp3 (loop) |
 | `level_complete` | Level cleared; shows Next Level / Main Menu. | FINISH.mp3 (once) |
 | `game_complete` | All levels cleared. | FINISH.mp3 (once) |
-| `lose` | Chain reached the hole. | FAIL.mp3 (once) |
+| `lose` | Chain reached the hole. | IN-GAME.mp3 (loop) |
 | `records` | High score table. | MENU.mp3 (loop) |
 | `cheat_menu` | Cheat code entry screen. | MENU.mp3 (loop) |
 | `combo_test` | Developer mode for testing chain combos. | IN-GAME.mp3 (loop) |
@@ -135,7 +135,6 @@ Streamed via `pygame.mixer.music`. Tracks located in `ASSETS/`:
 | `MENU.mp3` | All menu and non-gameplay states |
 | `IN-GAME.mp3` | Active gameplay |
 | `FINISH.mp3` | Level/game complete (plays once) |
-| `FAIL.mp3` | Loss screen (plays once) |
 
 ### 5.2 Sound Effects
 Synthesized at startup using numpy waveforms (no audio files required):
@@ -185,7 +184,6 @@ Zuma/
 │   ├── MENU.mp3
 │   ├── IN-GAME.mp3
 │   ├── FINISH.mp3
-│   ├── FAIL.mp3
 │   ├── red_sprite_fixed.png
 │   ├── green_sprite_fixed.png
 │   ├── blue_sprite_fixed.png
@@ -205,7 +203,11 @@ Zuma/
 │   ├── editor.py
 │   └── levels/
 │       ├── level1.json
-│       └── level2.json
+│       ├── level2.json
+│       ├── level3.json
+│       ├── level4.json
+│       ├── level5.json
+│       └── level6.json
 └── tests/
     ├── test_chain_catchup.py
     ├── test_chain_insert.py

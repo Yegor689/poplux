@@ -1,6 +1,15 @@
 import math
 import bisect
-from settings import PATH_NUM_POINTS
+from settings import PATH_NUM_POINTS, SCREEN_WIDTH, SCREEN_HEIGHT
+
+# Levels are authored for a 1280×960 canvas. Scale and offset so the path
+# fills and centres on the actual logical canvas size.
+_PATH_AUTHORED_WIDTH  = 1280
+_PATH_AUTHORED_HEIGHT = 960
+_PATH_SCALE_X = SCREEN_HEIGHT / _PATH_AUTHORED_HEIGHT
+_PATH_SCALE_Y = SCREEN_HEIGHT / _PATH_AUTHORED_HEIGHT
+_PATH_X_OFFSET = (SCREEN_WIDTH - _PATH_AUTHORED_WIDTH * _PATH_SCALE_X) / 2
+_PATH_Y_OFFSET = 0
 
 
 class Path:
@@ -10,6 +19,7 @@ class Path:
         if len(control) < 2:
             raise ValueError("A level must have at least 2 waypoints.")
         self.waypoints = self._resample(self._catmull_rom_chain(control))
+        self.waypoints = [(x * _PATH_SCALE_X + _PATH_X_OFFSET, y * _PATH_SCALE_Y) for x, y in self.waypoints]
         self._arc_lengths = self._compute_arc_lengths()
         self.total_length = self._arc_lengths[-1]
 

@@ -2,8 +2,8 @@ import json
 import os
 
 # Display
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 960
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 FPS = 60
 TITLE = "Poplux"
 
@@ -49,3 +49,13 @@ def reload_levels():
     files, data = _read_levels()
     LEVEL_FILES[:] = files
     LEVELS[:]      = data
+
+
+class Settings:
+    """Global mutable settings — single instance, imported everywhere as needed."""
+    def __init__(self):
+        self.music_volume: float = 0.4   # 0.0 – 1.0
+        self.colorblind_mode: bool = False
+
+
+SETTINGS = Settings()
