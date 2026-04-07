@@ -26,6 +26,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.renderer = Renderer(self._logical)
         self.state = "main_menu"
+        self._records_scroll = 0
         self.current_level_idx = 0
         self.path = None
         self.frog = None
@@ -240,6 +241,13 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+            if event.type == pygame.MOUSEWHEEL and self.state == "records":
+                all_records = records_store.top()
+                max_rows = self.renderer.records_max_rows()
+                self._records_scroll = max(0, min(
+                    self._records_scroll - event.y,
+                    max(0, len(all_records) - max_rows)
+                ))
             if event.type == pygame.MOUSEMOTION and self.state == "settings":
                 if event.buttons[0]:  # left button held — drag slider
                     action = self.renderer.settings_interact(mouse_pos, SETTINGS)
@@ -256,6 +264,13 @@ class Game:
                         self.state = self._pre_pause_state
                     else:
                         self.state = "main_menu"
+                if self.state == "records":
+                    all_records = records_store.top()
+                    max_rows = self.renderer.records_max_rows()
+                    if event.key == pygame.K_DOWN:
+                        self._records_scroll = min(self._records_scroll + 1, max(0, len(all_records) - max_rows))
+                    elif event.key == pygame.K_UP:
+                        self._records_scroll = max(0, self._records_scroll - 1)
                 if event.key == pygame.K_r and self.state == "lose":
                     if self._endless_mode:
                         self._init_endless_mode()
@@ -294,6 +309,7 @@ class Game:
                         self.state = "level_select"
                     elif btn == 2:
                         self.state = "records"
+                        self._records_scroll = 0
                     elif btn == 3:
                         self.state = "settings"
                     elif btn == 4:
@@ -688,7 +704,7 @@ class Game:
         elif self.state == "level_select":
             self.renderer.draw_level_select(mouse_pos, records_store.best_by_level())
         elif self.state == "records":
-            self.renderer.draw_records(records_store.top())
+            self.renderer.draw_records(records_store.top(), self._records_scroll)
         elif self.state == "settings":
             self.renderer.draw_settings(mouse_pos, SETTINGS)
         else:

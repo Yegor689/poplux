@@ -817,15 +817,21 @@ class Renderer:
     # Records screen                                                       #
     # ------------------------------------------------------------------ #
 
-    _COL_X      = (200, 560, 1050, 1380, 1720)  # #, Level, Score, Time, Date
-    _COL_LABELS = ("#",  "LEVEL", "SCORE", "TIME", "DATE")
-    _COL_ALIGN  = ("r",  "l",     "r",     "r",    "r")
+    # Column right-edges (for "r") or left-edges (for "l")
+    _COL_X      = (120, 220, 820, 1200, 1520, 1860)  # rank, #, Level, Score, Time, Date
+    _COL_LABELS = ("#",  "",   "LEVEL", "SCORE", "TIME", "DATE")
+    _COL_ALIGN  = ("r",  "l",  "l",     "r",     "r",    "r")
     _ROW_H      = 62
-    _TABLE_TOP  = 220
+    _TABLE_TOP  = 200
 
-    def draw_records(self, records: list) -> None:
+    def records_max_rows(self) -> int:
+        div_y = self._TABLE_TOP + self.font_small.get_height() + 6
+        hint_h = self.font_small.get_height() + 28
+        return (SCREEN_HEIGHT - div_y - hint_h) // self._ROW_H
+
+    def draw_records(self, records: list, scroll: int = 0) -> None:
         title = self.font_large.render("RECORDS", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 80)))
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 78)))
 
         if not records:
             msg = self.font_med.render("No records yet — win a level to get started!", True, (160, 160, 160))
@@ -834,48 +840,66 @@ class Renderer:
             self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
             return
 
+        max_rows = self.records_max_rows()
+        scroll = max(0, min(scroll, max(0, len(records) - max_rows)))
+        shown = records[scroll:scroll + max_rows]
+
+        # Subtitle
+        total = len(records)
+        end = scroll + len(shown)
+        sub_text = f"Showing {scroll + 1}–{end} of {total}  ·  sorted by score" if total > max_rows else f"Top {total} runs by score  ·  all levels"
+        sub = self.font_small.render(sub_text, True, (120, 120, 120))
+        self.screen.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, 150)))
+
         # Header row
         header_y = self._TABLE_TOP
-        for label, x, align in zip(self._COL_LABELS, self._COL_X, self._COL_ALIGN):
+        div_y = header_y + self.font_small.get_height() + 6
+        col_labels = ("#", "LEVEL", "SCORE", "TIME", "DATE")
+        col_x      = (self._COL_X[0], self._COL_X[2], self._COL_X[3], self._COL_X[4], self._COL_X[5])
+        col_align  = ("r", "l", "r", "r", "r")
+        for label, x, align in zip(col_labels, col_x, col_align):
             surf = self.font_small.render(label, True, (180, 180, 100))
             rect = surf.get_rect(y=header_y)
-            if align == "r":
-                rect.right = x
-            else:
-                rect.left = x
+            rect.right = x if align == "r" else rect.right
+            rect.left  = x if align == "l" else rect.left
             self.screen.blit(surf, rect)
 
-        # Divider
-        div_y = header_y + self.font_small.get_height() + 4
-        pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y))
+        pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y), 1)
 
         # Data rows
-        max_rows = (SCREEN_HEIGHT - div_y - 40) // self._ROW_H
-        for row_i, rec in enumerate(records[:max_rows]):
-            y = div_y + 6 + row_i * self._ROW_H
+        for row_i, rec in enumerate(shown):
+            y = div_y + 4 + row_i * self._ROW_H
             shade = (22, 22, 30) if row_i % 2 == 0 else (0, 0, 0, 0)
             pygame.draw.rect(self.screen, shade,
-                             pygame.Rect(40, y - 2, SCREEN_WIDTH - 80, self._ROW_H - 2))
+                             pygame.Rect(40, y, SCREEN_WIDTH - 80, self._ROW_H - 2))
+
+            is_top = row_i == 0
+            color  = (255, 220, 50) if is_top else HUD_COLOR
+
+            # Rank — medal colors for global top 3
+            abs_rank = scroll + row_i
+            rank_color = {
+                0: (255, 215,  50),
+                1: (200, 200, 210),
+                2: (200, 130,  60),
+            }.get(abs_rank, (140, 140, 140))
+            rank_surf = self.font_small.render(f"{abs_rank + 1}", True, rank_color)
+            rank_rect = rank_surf.get_rect(right=self._COL_X[0], y=y + (self._ROW_H - rank_surf.get_height()) // 2)
+            self.screen.blit(rank_surf, rank_rect)
 
             mins, secs = divmod(int(rec["time"]), 60)
-            cells = (
-                str(row_i + 1),
-                rec["level"],
-                str(rec["score"]),
-                f"{mins}:{secs:02d}",
-                rec["date"],
-            )
-            color = (255, 220, 50) if row_i == 0 else HUD_COLOR
-            for cell, x, align in zip(cells, self._COL_X, self._COL_ALIGN):
+            cells = (rec["level"], str(rec["score"]), f"{mins}:{secs:02d}", rec["date"])
+            cell_x     = (self._COL_X[2], self._COL_X[3], self._COL_X[4], self._COL_X[5])
+            cell_align = ("l", "r", "r", "r")
+            for cell, x, align in zip(cells, cell_x, cell_align):
                 surf = self.font_small.render(cell, True, color)
-                rect = surf.get_rect(y=y)
-                if align == "r":
-                    rect.right = x
-                else:
-                    rect.left = x
+                rect = surf.get_rect(y=y + (self._ROW_H - surf.get_height()) // 2)
+                rect.right = x if align == "r" else rect.right
+                rect.left  = x if align == "l" else rect.left
                 self.screen.blit(surf, rect)
 
-        hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
+        scroll_hint = "  ·  ↑↓ or scroll to navigate" if len(records) > max_rows else ""
+        hint = self.font_small.render(f"ESC  ·  main menu{scroll_hint}", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #
