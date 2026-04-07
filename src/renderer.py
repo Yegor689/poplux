@@ -478,9 +478,9 @@ class Renderer:
     # Level-select screen                                                  #
     # ------------------------------------------------------------------ #
 
-    _CARD_W      = 296
-    _CARD_H      = 260
-    _CARD_GAP    = 32
+    _CARD_W      = 380
+    _CARD_H      = 390
+    _CARD_GAP    = 40
     _MAX_PER_ROW = 4
 
     def _level_card_rects(self) -> list:
@@ -488,7 +488,7 @@ class Renderer:
         n       = len(LEVELS)
         per_row = min(self._MAX_PER_ROW, n)
         cards   = []
-        y       = 192
+        y       = 210
         for row_start in range(0, n, per_row):
             row     = list(range(row_start, min(row_start + per_row, n)))
             total_w = len(row) * self._CARD_W + (len(row) - 1) * self._CARD_GAP
@@ -518,35 +518,46 @@ class Renderer:
             pygame.draw.rect(self.screen, fill,   rect, border_radius=10)
             pygame.draw.rect(self.screen, border, rect, 2, border_radius=10)
 
+            pad = 8
+            cy = rect.y + pad
+
             name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
-            self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + 51)))
+            self.screen.blit(name_surf, name_surf.get_rect(centerx=rect.centerx, top=cy))
+            cy += name_surf.get_height() + 6
 
             sub_surf = self.font_small.render(cfg.get("subtitle", ""), True, (180, 180, 180))
             max_w = self._CARD_W - 16
             if sub_surf.get_width() > max_w:
-                sub_surf = pygame.transform.smoothscale(
-                    sub_surf, (max_w, sub_surf.get_height()))
-            self.screen.blit(sub_surf, sub_surf.get_rect(center=(rect.centerx, rect.y + 91)))
+                sub_surf = pygame.transform.smoothscale(sub_surf, (max_w, sub_surf.get_height()))
+            self.screen.blit(sub_surf, sub_surf.get_rect(centerx=rect.centerx, top=cy))
+            cy += sub_surf.get_height() + 10
+
+            pygame.draw.line(self.screen, (70, 70, 90), (rect.x + 16, cy), (rect.right - 16, cy))
+            cy += 8
 
             balls_surf = self.font_small.render(f"{cfg['total_balls']} balls", True, (160, 200, 160))
-            self.screen.blit(balls_surf, balls_surf.get_rect(center=(rect.centerx, rect.y + 125)))
+            self.screen.blit(balls_surf, balls_surf.get_rect(centerx=rect.centerx, top=cy))
+            cy += balls_surf.get_height() + 4
 
             speed_surf = self.font_small.render(f"{int(cfg['chain_speed'])} px/s", True, (180, 150, 210))
-            self.screen.blit(speed_surf, speed_surf.get_rect(center=(rect.centerx, rect.y + 158)))
+            self.screen.blit(speed_surf, speed_surf.get_rect(centerx=rect.centerx, top=cy))
+            cy += speed_surf.get_height() + 10
+
+            pygame.draw.line(self.screen, (70, 70, 90), (rect.x + 16, cy), (rect.right - 16, cy))
+            cy += 8
 
             best = (best_scores or {}).get(cfg["name"])
             if best:
                 mins = int(best["time"]) // 60
                 secs = int(best["time"]) % 60
-                score_text = f"Best: {best['score']:,}"
-                time_text  = f"{mins}:{secs:02d}"
-                score_surf = self.font_small.render(score_text, True, (255, 220, 60))
-                time_surf  = self.font_small.render(time_text,  True, (180, 200, 180))
-                self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, rect.y + 194)))
-                self.screen.blit(time_surf,  time_surf.get_rect(center=(rect.centerx, rect.y + 227)))
+                score_surf = self.font_small.render(f"Best: {best['score']:,}", True, (255, 220, 60))
+                time_surf  = self.font_small.render(f"{mins}:{secs:02d}", True, (180, 200, 180))
+                self.screen.blit(score_surf, score_surf.get_rect(centerx=rect.centerx, top=cy))
+                cy += score_surf.get_height() + 4
+                self.screen.blit(time_surf, time_surf.get_rect(centerx=rect.centerx, top=cy))
             else:
                 no_surf = self.font_small.render("No record yet", True, (100, 100, 120))
-                self.screen.blit(no_surf, no_surf.get_rect(center=(rect.centerx, rect.y + 210)))
+                self.screen.blit(no_surf, no_surf.get_rect(centerx=rect.centerx, top=cy))
 
 
         hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
@@ -556,9 +567,9 @@ class Renderer:
     # Main menu                                                            #
     # ------------------------------------------------------------------ #
 
-    _MENU_BTN_W = 600
-    _MENU_BTN_H = 96
-    _MENU_BTN_GAP = 24
+    _MENU_BTN_W = 700
+    _MENU_BTN_H = 108
+    _MENU_BTN_GAP = 26
     _MENU_LABELS = ["PLAY", "SELECT LEVEL", "RECORDS", "SETTINGS", "QUIT"]
 
     def _main_menu_button_rects(self) -> list:
@@ -599,8 +610,8 @@ class Renderer:
     # Pause menu                                                           #
     # ------------------------------------------------------------------ #
 
-    _PAUSE_BTN_W = 560
-    _PAUSE_BTN_H = 100
+    _PAUSE_BTN_W = 640
+    _PAUSE_BTN_H = 108
     _PAUSE_BTN_GAP = 28
     _PAUSE_LABELS = ["RESUME", "RESTART", "MAIN MENU"]
 
@@ -806,11 +817,11 @@ class Renderer:
     # Records screen                                                       #
     # ------------------------------------------------------------------ #
 
-    _COL_X      = (300, 710, 1000, 1240, 1500)  # #, Level, Score, Time, Date
+    _COL_X      = (200, 560, 1050, 1380, 1720)  # #, Level, Score, Time, Date
     _COL_LABELS = ("#",  "LEVEL", "SCORE", "TIME", "DATE")
     _COL_ALIGN  = ("r",  "l",     "r",     "r",    "r")
-    _ROW_H      = 41
-    _TABLE_TOP  = 192
+    _ROW_H      = 62
+    _TABLE_TOP  = 220
 
     def draw_records(self, records: list) -> None:
         title = self.font_large.render("RECORDS", True, HUD_COLOR)
@@ -873,21 +884,48 @@ class Renderer:
 
     _SLIDER_W = 400
     _SLIDER_H = 10
-    _SETTINGS_ROW_H = 90
+    _SETTINGS_ROW_H = 110
+    _SETTINGS_CTRL_X = SCREEN_WIDTH // 2 + 80  # left edge of controls column
 
     def _settings_rows_y(self) -> list:
-        start = SCREEN_HEIGHT // 2 - self._SETTINGS_ROW_H
-        return [start + i * self._SETTINGS_ROW_H for i in range(2)]
+        n = 4
+        total_h = n * self._SETTINGS_ROW_H
+        start = SCREEN_HEIGHT // 2 - total_h // 2
+        return [start + i * self._SETTINGS_ROW_H for i in range(n)]
 
-    def _volume_slider_rect(self) -> pygame.Rect:
-        y = self._settings_rows_y()[0]
-        slider_x = SCREEN_WIDTH // 2 + 80
-        return pygame.Rect(slider_x, y - self._SLIDER_H // 2,
+    def _slider_rect(self, row: int) -> pygame.Rect:
+        y = self._settings_rows_y()[row]
+        return pygame.Rect(self._SETTINGS_CTRL_X, y - self._SLIDER_H // 2,
                            self._SLIDER_W, self._SLIDER_H)
 
-    def _toggle_rect(self) -> pygame.Rect:
-        y = self._settings_rows_y()[1]
-        return pygame.Rect(SCREEN_WIDTH // 2 + 80, y - 22, 72, 44)
+    def _toggle_rect(self, row: int) -> pygame.Rect:
+        y = self._settings_rows_y()[row]
+        return pygame.Rect(self._SETTINGS_CTRL_X, y - 22, 72, 44)
+
+    def _draw_slider(self, mouse_pos, y: int, value: float, color: tuple) -> None:
+        track = pygame.Rect(self._SETTINGS_CTRL_X, y - self._SLIDER_H // 2,
+                            self._SLIDER_W, self._SLIDER_H)
+        pygame.draw.rect(self.screen, (60, 60, 60), track, border_radius=5)
+        fill_w = int(track.w * value)
+        if fill_w > 0:
+            pygame.draw.rect(self.screen, color,
+                             pygame.Rect(track.x, track.y, fill_w, track.h), border_radius=5)
+        knob_x = track.x + fill_w
+        hovered = math.hypot(mouse_pos[0] - knob_x, mouse_pos[1] - track.centery) < 14
+        light = tuple(min(255, c + 60) for c in color)
+        self._aa_circle(self.screen, light if hovered else color, (knob_x, track.centery), 12)
+        pct = self.font_small.render(f"{int(value * 100)}%", True, HUD_COLOR)
+        self.screen.blit(pct, pct.get_rect(midleft=(track.right + 20, y)))
+
+    def _draw_toggle(self, y: int, on: bool) -> None:
+        tog = pygame.Rect(self._SETTINGS_CTRL_X, y - 22, 72, 44)
+        pygame.draw.rect(self.screen, (60, 140, 60) if on else (60, 60, 60), tog, border_radius=22)
+        pygame.draw.rect(self.screen, (120, 220, 120) if on else (100, 100, 100), tog, 2, border_radius=22)
+        knob_x = tog.right - 26 if on else tog.left + 26
+        self._aa_circle(self.screen, (220, 255, 220) if on else (160, 160, 160), (knob_x, tog.centery), 16)
+        lbl = self.font_small.render("ON" if on else "OFF", True,
+                                     (120, 220, 120) if on else (120, 120, 120))
+        self.screen.blit(lbl, lbl.get_rect(midleft=(tog.right + 20, y)))
 
     def draw_settings(self, mouse_pos, settings) -> None:
         cx = SCREEN_WIDTH // 2
@@ -898,61 +936,54 @@ class Renderer:
         label_x = cx - 60
 
         # --- Music Volume ---
-        y = rows_y[0]
         label = self.font_med.render("MUSIC VOLUME", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, y)))
+        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[0])))
+        self._draw_slider(mouse_pos, rows_y[0], settings.music_volume, (80, 180, 80))
 
-        track = self._volume_slider_rect()
-        pygame.draw.rect(self.screen, (60, 60, 60), track, border_radius=5)
-        fill = pygame.Rect(track.x, track.y,
-                           int(track.w * settings.music_volume), track.h)
-        pygame.draw.rect(self.screen, (80, 180, 80), fill, border_radius=5)
+        # --- SFX Volume ---
+        label = self.font_med.render("SFX VOLUME", True, (180, 180, 180))
+        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[1])))
+        self._draw_slider(mouse_pos, rows_y[1], settings.sfx_volume, (80, 140, 200))
 
-        knob_x = track.x + int(track.w * settings.music_volume)
-        knob_y = track.centery
-        knob_hovered = math.hypot(mouse_pos[0] - knob_x, mouse_pos[1] - knob_y) < 14
-        knob_color = (160, 255, 160) if knob_hovered else (120, 220, 120)
-        self._aa_circle(self.screen, knob_color, (knob_x, knob_y), 12)
-
-        pct = self.font_small.render(f"{int(settings.music_volume * 100)}%", True, HUD_COLOR)
-        self.screen.blit(pct, pct.get_rect(midleft=(track.right + 20, y)))
+        # --- Fullscreen ---
+        label = self.font_med.render("FULLSCREEN", True, (180, 180, 180))
+        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[2])))
+        self._draw_toggle(rows_y[2], settings.fullscreen)
 
         # --- Colorblind Mode ---
-        y = rows_y[1]
         label = self.font_med.render("COLORBLIND MODE", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, y)))
-
-        tog = self._toggle_rect()
-        on = settings.colorblind_mode
-        pygame.draw.rect(self.screen, (60, 140, 60) if on else (60, 60, 60), tog, border_radius=22)
-        pygame.draw.rect(self.screen, (120, 220, 120) if on else (100, 100, 100), tog, 2, border_radius=22)
-        knob_tx = tog.right - 26 if on else tog.left + 26
-        self._aa_circle(self.screen, (220, 255, 220) if on else (160, 160, 160), (knob_tx, tog.centery), 16)
-        tog_label = self.font_small.render("ON" if on else "OFF", True,
-                                           (120, 220, 120) if on else (120, 120, 120))
-        self.screen.blit(tog_label, tog_label.get_rect(midleft=(tog.right + 20, y)))
+        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[3])))
+        self._draw_toggle(rows_y[3], settings.colorblind_mode)
 
         if settings.colorblind_mode:
-            preview_y = rows_y[1] + 70
+            preview_y = rows_y[3] + 58
             note = self.font_small.render("symbol preview:", True, (120, 120, 120))
             self.screen.blit(note, note.get_rect(midright=(label_x, preview_y)))
             for i, color_name in enumerate(("red", "green", "blue", "yellow")):
-                px = SCREEN_WIDTH // 2 + 80 + 30 + i * 80
+                px = self._SETTINGS_CTRL_X + 30 + i * 80
                 self._draw_ball(self.screen, color_name, px, preview_y, 28)
 
         hint = self.font_small.render("ESC  ·  back", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
 
     def settings_interact(self, mouse_pos, settings) -> "str | None":
-        """Handle a click on the settings screen. Returns action string or None."""
-        if self._toggle_rect().collidepoint(mouse_pos):
+        # Sliders
+        for row, attr, action in (
+            (0, "music_volume", "volume_changed"),
+            (1, "sfx_volume",   "sfx_changed"),
+        ):
+            track = self._slider_rect(row)
+            if track.inflate(0, 40).collidepoint(mouse_pos):
+                t = (mouse_pos[0] - track.x) / track.w
+                setattr(settings, attr, max(0.0, min(1.0, t)))
+                return action
+
+        # Toggles
+        if self._toggle_rect(2).collidepoint(mouse_pos):
+            settings.fullscreen = not settings.fullscreen
+            return "fullscreen_toggled"
+        if self._toggle_rect(3).collidepoint(mouse_pos):
             settings.colorblind_mode = not settings.colorblind_mode
             return "colorblind_toggled"
-
-        track = self._volume_slider_rect()
-        if track.inflate(0, 40).collidepoint(mouse_pos):
-            t = (mouse_pos[0] - track.x) / track.w
-            settings.music_volume = max(0.0, min(1.0, t))
-            return "volume_changed"
 
         return None

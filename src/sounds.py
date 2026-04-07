@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pygame
+from settings import SETTINGS
 
 
 _RATE = 44100
@@ -36,7 +37,7 @@ def play(name: str, volume: float = 0.5) -> None:
     """Play a named sound effect.  Silently ignores unknown names."""
     snd = _sounds.get(name)
     if snd:
-        snd.set_volume(volume)
+        snd.set_volume(volume * SETTINGS.sfx_volume)
         snd.play()
 
 

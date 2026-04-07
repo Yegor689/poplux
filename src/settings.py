@@ -55,7 +55,9 @@ class Settings:
     """Global mutable settings — single instance, imported everywhere as needed."""
     def __init__(self):
         self.music_volume: float = 0.4   # 0.0 – 1.0
+        self.sfx_volume: float = 0.5     # 0.0 – 1.0
         self.colorblind_mode: bool = False
+        self.fullscreen: bool = True
 
 
 SETTINGS = Settings()

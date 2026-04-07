@@ -344,6 +344,9 @@ class Game:
                     action = self.renderer.settings_interact(mouse_pos, SETTINGS)
                     if action == "volume_changed":
                         pygame.mixer.music.set_volume(SETTINGS.music_volume)
+                    elif action == "fullscreen_toggled":
+                        flags = pygame.FULLSCREEN if SETTINGS.fullscreen else 0
+                        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
         if self.state in ("playing", "combo_test"):
             self.frog.update(self._frame_mouse)
         return True
