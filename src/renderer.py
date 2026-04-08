@@ -8,17 +8,20 @@ from settings import (
 )
 
 _ASSETS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
-_FONT_ORBITRON = os.path.join(_ASSETS, "Orbitron-VariableFont_wght.ttf")
-_FONT_EXO2     = os.path.join(_ASSETS, "Exo2-VariableFont_wght.ttf")
+_FONT_ORBITRON  = os.path.join(_ASSETS, "Orbitron-VariableFont_wght.ttf")
+_FONT_EXO2      = os.path.join(_ASSETS, "Exo2-VariableFont_wght.ttf")
+_FONT_SYMBOLS   = os.path.join(_ASSETS, "NotoSansSymbols2-Regular.ttf")
 
 
 class Renderer:
     def __init__(self, screen: pygame.Surface):
         self.screen = screen
-        self.font_large = pygame.font.Font(_FONT_ORBITRON, 112)
-        self.font_med   = pygame.font.Font(_FONT_EXO2, 58)
-        self.font_small = pygame.font.Font(_FONT_EXO2, 42)
-        self.font_score = pygame.font.Font(_FONT_ORBITRON, 76)
+        self.font_large    = pygame.font.Font(_FONT_ORBITRON, 112)
+        self.font_med      = pygame.font.Font(_FONT_EXO2, 58)
+        self.font_small    = pygame.font.Font(_FONT_EXO2, 42)
+        self.font_score    = pygame.font.Font(_FONT_ORBITRON, 76)
+        self.font_icon_lg  = pygame.font.Font(_FONT_SYMBOLS, 72)
+        self.font_icon_sm  = pygame.font.Font(_FONT_SYMBOLS, 52)
         self._palettes = self._build_palettes()
         # Cached surfaces — allocated once, cleared and reused each frame
         self._aim_line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -571,13 +574,13 @@ class Renderer:
     _MENU_BTN_H      = 108
     _MENU_BTN_H_PLAY = 136   # PLAY button is taller
     _MENU_BTN_GAP    = 26
-    # (label, fill, fill_hover, border, border_hover)
+    # (label, icon, fill, fill_hover, border, border_hover)
     _MENU_BTNS = [
-        ("PLAY",         (30,  90,  30),  (50,  130, 50),  (80,  210, 80),  (130, 255, 130)),
-        ("SELECT LEVEL", (25,  55,  100), (40,  80,  150), (60,  130, 220), (100, 180, 255)),
-        ("RECORDS",      (100, 85,  15),  (140, 115, 20),  (220, 185, 50),  (255, 220, 80)),
-        ("SETTINGS",     (50,  50,  70),  (70,  70,  100), (120, 120, 170), (170, 170, 220)),
-        ("QUIT",         (90,  25,  25),  (130, 40,  40),  (200, 70,  70),  (255, 100, 100)),
+        ("PLAY",         "▶",  (30,  90,  30),  (50,  130, 50),  (80,  210, 80),  (130, 255, 130)),
+        ("SELECT LEVEL", "▦",  (25,  55,  100), (40,  80,  150), (60,  130, 220), (100, 180, 255)),
+        ("RECORDS",      "◈",  (100, 85,  15),  (140, 115, 20),  (220, 185, 50),  (255, 220, 80)),
+        ("SETTINGS",     "⌘",  (50,  50,  70),  (70,  70,  100), (120, 120, 170), (170, 170, 220)),
+        ("QUIT",         "✕",  (90,  25,  25),  (130, 40,  40),  (200, 70,  70),  (255, 100, 100)),
     ]
 
     def _main_menu_button_rects(self) -> list:
@@ -654,9 +657,9 @@ class Renderer:
 
         # --- Buttons ---
         rects = self._main_menu_button_rects()
-        for i, (rect, (label, fill, fill_h, border, border_h)) in enumerate(
+        for i, (rect, (label, icon, fill, fill_h, border, border_h)) in enumerate(
                 zip(rects, self._MENU_BTNS)):
-            hovered = rect.collidepoint(mouse_pos)
+            hovered    = rect.collidepoint(mouse_pos)
             col_fill   = fill_h   if hovered else fill
             col_border = border_h if hovered else border
             pygame.draw.rect(self.screen, col_fill,   rect, border_radius=10)
@@ -666,41 +669,17 @@ class Renderer:
             accent = pygame.Rect(rect.x, rect.y + 10, 5, rect.h - 20)
             pygame.draw.rect(self.screen, col_border, accent, border_radius=3)
 
-            # Hand-drawn icon to the left of the label
-            font     = self.font_large if i == 0 else self.font_med
-            txt_surf = font.render(label, True, HUD_COLOR)
-            icon_w   = 40
-            gap      = 20
-            total_w  = icon_w + gap + txt_surf.get_width()
-            ix       = rect.centerx - total_w // 2
-            icy      = rect.centery
-            is2      = icon_w // 2
-
-            if i == 0:   # PLAY — triangle
-                pts = [(ix, icy - is2), (ix, icy + is2), (ix + icon_w, icy)]
-                pygame.gfxdraw.filled_polygon(self.screen, pts, col_border)
-                pygame.gfxdraw.aapolygon(self.screen, pts, col_border)
-            elif i == 1:  # SELECT LEVEL — 2×2 grid of squares
-                sq = is2 - 3
-                for gx, gy in ((ix, icy - is2), (ix + sq + 4, icy - is2),
-                               (ix, icy + 4),   (ix + sq + 4, icy + 4)):
-                    pygame.draw.rect(self.screen, col_border, (gx, gy, sq, sq), border_radius=2)
-            elif i == 2:  # RECORDS — trophy cup (circle + stem + base)
-                pygame.gfxdraw.aacircle(self.screen, ix + is2, icy - 6, is2 - 2, col_border)
-                pygame.draw.line(self.screen, col_border, (ix + is2, icy + is2 - 8), (ix + is2, icy + is2), 3)
-                pygame.draw.line(self.screen, col_border, (ix + 4, icy + is2), (ix + icon_w - 4, icy + is2), 3)
-            elif i == 3:  # SETTINGS — gear (circle + 4 nubs)
-                pygame.gfxdraw.aacircle(self.screen, ix + is2, icy, is2 - 6, col_border)
-                for angle in (0, math.pi / 2, math.pi, 3 * math.pi / 2):
-                    nx = int(ix + is2 + math.cos(angle) * (is2 - 2))
-                    ny = int(icy      + math.sin(angle) * (is2 - 2))
-                    pygame.gfxdraw.filled_circle(self.screen, nx, ny, 5, col_border)
-            elif i == 4:  # QUIT — X
-                pygame.draw.line(self.screen, col_border, (ix + 4, icy - is2 + 4), (ix + icon_w - 4, icy + is2 - 4), 3)
-                pygame.draw.line(self.screen, col_border, (ix + icon_w - 4, icy - is2 + 4), (ix + 4, icy + is2 - 4), 3)
-
-            self.screen.blit(txt_surf, (ix + icon_w + gap,
-                                        rect.centery - txt_surf.get_height() // 2))
+            # Icon + label centered together
+            font      = self.font_large  if i == 0 else self.font_med
+            icon_font = self.font_icon_lg if i == 0 else self.font_icon_sm
+            icon_surf = icon_font.render(icon, True, col_border)
+            txt_surf  = font.render(label, True, HUD_COLOR)
+            gap       = 20
+            total_w   = icon_surf.get_width() + gap + txt_surf.get_width()
+            ix        = rect.centerx - total_w // 2
+            self.screen.blit(icon_surf, (ix, rect.centery - icon_surf.get_height() // 2))
+            self.screen.blit(txt_surf,  (ix + icon_surf.get_width() + gap,
+                                         rect.centery - txt_surf.get_height() // 2))
 
         hint = self.font_small.render("ESC to quit", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
