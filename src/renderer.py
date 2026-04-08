@@ -21,7 +21,7 @@ class Renderer:
         self.font_small    = pygame.font.Font(_FONT_EXO2, 42)
         self.font_score    = pygame.font.Font(_FONT_ORBITRON, 76)
         self.font_icon_lg  = pygame.font.Font(_FONT_SYMBOLS, 72)
-        self.font_icon_sm  = pygame.font.Font(_FONT_SYMBOLS, 52)
+        self.font_icon_sm  = pygame.font.Font(_FONT_SYMBOLS, 44)
         self._palettes = self._build_palettes()
         # Cached surfaces — allocated once, cleared and reused each frame
         self._aim_line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -588,16 +588,16 @@ class Renderer:
     # ------------------------------------------------------------------ #
 
     _MENU_BTN_W      = 700
-    _MENU_BTN_H      = 108
-    _MENU_BTN_H_PLAY = 136   # PLAY button is taller
-    _MENU_BTN_GAP    = 26
+    _MENU_BTN_H      = 90
+    _MENU_BTN_H_PLAY = 130
+    _MENU_BTN_GAP    = 36
     # (label, icon, fill, fill_hover, border, border_hover)
     _MENU_BTNS = [
-        ("PLAY",         "▶",  (30,  90,  30),  (50,  130, 50),  (80,  210, 80),  (130, 255, 130)),
-        ("SELECT LEVEL", "▦",  (25,  55,  100), (40,  80,  150), (60,  130, 220), (100, 180, 255)),
-        ("RECORDS",      "◈",  (100, 85,  15),  (140, 115, 20),  (220, 185, 50),  (255, 220, 80)),
-        ("SETTINGS",     "⌘",  (50,  50,  70),  (70,  70,  100), (120, 120, 170), (170, 170, 220)),
-        ("QUIT",         "✕",  (90,  25,  25),  (130, 40,  40),  (200, 70,  70),  (255, 100, 100)),
+        ("PLAY",         "▶",  (20,  65,  20),  (35,  95,  35),  (80,  210, 80),  (120, 245, 120)),
+        ("SELECT LEVEL", "▦",  (18,  38,  75),  (28,  58,  110), (60,  130, 220), (90,  170, 255)),
+        ("RECORDS",      "◈",  (70,  60,  10),  (100, 85,  15),  (210, 175, 45),  (250, 215, 75)),
+        ("SETTINGS",     "⌘",  (35,  35,  52),  (52,  52,  75),  (110, 110, 160), (160, 160, 210)),
+        ("QUIT",         "✕",  (65,  18,  18),  (95,  28,  28),  (190, 65,  65),  (240, 95,  95)),
     ]
 
     def _main_menu_button_rects(self) -> list:
@@ -628,16 +628,15 @@ class Renderer:
         cx = SCREEN_WIDTH // 2
         t = pygame.time.get_ticks() / 1000.0
 
-        # --- Animated logo ---
-        # Pulsing glow behind the title
-        glow_alpha = int(60 + 40 * math.sin(t * 2.0))
-        glow_w, glow_h = 860, 140
+        # --- Logo glow — neutral white pulse ---
+        glow_alpha = int(30 + 20 * math.sin(t * 2.0))
+        glow_w, glow_h = 860, 130
         glow_surf = pygame.Surface((glow_w, glow_h), pygame.SRCALPHA)
         for r, a in ((glow_h // 2, glow_alpha // 3), (glow_h // 3, glow_alpha // 2), (glow_h // 4, glow_alpha)):
-            pygame.gfxdraw.filled_ellipse(glow_surf, glow_w // 2, glow_h // 2, glow_w // 2, r, (80, 220, 80, a))
-        self.screen.blit(glow_surf, glow_surf.get_rect(center=(cx, 118)))
+            pygame.gfxdraw.filled_ellipse(glow_surf, glow_w // 2, glow_h // 2, glow_w // 2, r, (200, 200, 220, a))
+        self.screen.blit(glow_surf, glow_surf.get_rect(center=(cx, 110)))
 
-        # Letter-by-letter title — each letter tinted to its ball color
+        # --- Letter-by-letter title with bob ---
         letter_surfs = []
         letter_colors = [
             tuple(min(255, c + 60) for c in BALL_COLORS[col])
@@ -648,29 +647,15 @@ class Renderer:
 
         total_w = sum(s.get_width() for s in letter_surfs) + 8 * (len(letter_surfs) - 1)
         lx = cx - total_w // 2
-        logo_y = 48
+        logo_y = 42
         for i, surf in enumerate(letter_surfs):
-            # Each letter bobs at a different phase
-            bob = math.sin(t * 2.5 + i * 0.55) * 7
+            bob = math.sin(t * 2.5 + i * 0.55) * 6
             self.screen.blit(surf, (lx, logo_y + bob))
             lx += surf.get_width() + 8
 
-        # --- Colored ball row beneath the title ---
-        ball_y = 178
-        ball_r = 22
-        ball_spacing = ball_r * 2 + 14
-        total_bw = len(self._LOGO_COLORS) * ball_spacing - 14
-        bx = cx - total_bw // 2 + ball_r
-        for i, color_name in enumerate(self._LOGO_COLORS):
-            # Each ball pulses in size at its own phase
-            pulse = math.sin(t * 3.0 + i * 0.9) * 3
-            r = int(ball_r + pulse)
-            self._draw_ball(self.screen, color_name, bx, ball_y, r)
-            bx += ball_spacing
-
-        # --- Tagline ---
-        tagline = self.font_small.render("clear the chain before it reaches the hole", True, (140, 140, 140))
-        self.screen.blit(tagline, tagline.get_rect(center=(cx, 222)))
+        # --- Tagline — short spaced-out style ---
+        tagline = self.font_small.render("M A T C H  ·  P O P  ·  S U R V I V E", True, (110, 110, 130))
+        self.screen.blit(tagline, tagline.get_rect(center=(cx, 196)))
 
         # --- Buttons ---
         rects = self._main_menu_button_rects()
@@ -682,11 +667,7 @@ class Renderer:
             pygame.draw.rect(self.screen, col_fill,   rect, border_radius=10)
             pygame.draw.rect(self.screen, col_border, rect, 2, border_radius=10)
 
-            # Accent bar on the left edge
-            accent = pygame.Rect(rect.x, rect.y + 10, 5, rect.h - 20)
-            pygame.draw.rect(self.screen, col_border, accent, border_radius=3)
-
-            # Icon + label centered together
+            # Icon + label centered together — secondary buttons use smaller font
             font      = self.font_large  if i == 0 else self.font_med
             icon_font = self.font_icon_lg if i == 0 else self.font_icon_sm
             icon_surf = icon_font.render(icon, True, col_border)
@@ -694,14 +675,13 @@ class Renderer:
             gap       = 20
             total_w   = icon_surf.get_width() + gap + txt_surf.get_width()
             ix        = rect.centerx - total_w // 2
-            # Align icon to label's cap-height midpoint using ascent offset
-            txt_top  = rect.centery - txt_surf.get_height() // 2
+            txt_top     = rect.centery - txt_surf.get_height() // 2
             txt_cap_mid = txt_top + font.get_ascent() // 2
-            icon_y   = txt_cap_mid - icon_font.get_ascent() // 2
+            icon_y      = txt_cap_mid - icon_font.get_ascent() // 2
             self.screen.blit(icon_surf, (ix, icon_y))
             self.screen.blit(txt_surf,  (ix + icon_surf.get_width() + gap, txt_top))
 
-        hint = self.font_small.render("ESC to quit", True, (120, 120, 120))
+        hint = self.font_small.render("ESC to quit", True, (100, 100, 110))
         self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #
