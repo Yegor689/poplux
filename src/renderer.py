@@ -567,21 +567,32 @@ class Renderer:
     # Main menu                                                            #
     # ------------------------------------------------------------------ #
 
-    _MENU_BTN_W = 700
-    _MENU_BTN_H = 108
-    _MENU_BTN_GAP = 26
-    _MENU_LABELS = ["PLAY", "SELECT LEVEL", "RECORDS", "SETTINGS", "QUIT"]
+    _MENU_BTN_W      = 700
+    _MENU_BTN_H      = 108
+    _MENU_BTN_H_PLAY = 136   # PLAY button is taller
+    _MENU_BTN_GAP    = 26
+    # (label, fill, fill_hover, border, border_hover)
+    _MENU_BTNS = [
+        ("PLAY",         (30,  90,  30),  (50,  130, 50),  (80,  210, 80),  (130, 255, 130)),
+        ("SELECT LEVEL", (25,  55,  100), (40,  80,  150), (60,  130, 220), (100, 180, 255)),
+        ("RECORDS",      (100, 85,  15),  (140, 115, 20),  (220, 185, 50),  (255, 220, 80)),
+        ("SETTINGS",     (50,  50,  70),  (70,  70,  100), (120, 120, 170), (170, 170, 220)),
+        ("QUIT",         (90,  25,  25),  (130, 40,  40),  (200, 70,  70),  (255, 100, 100)),
+    ]
 
     def _main_menu_button_rects(self) -> list:
-        n = len(self._MENU_LABELS)
-        total_h = n * self._MENU_BTN_H + (n - 1) * self._MENU_BTN_GAP
-        start_y = SCREEN_HEIGHT // 2 - total_h // 2 + 60
+        n = len(self._MENU_BTNS)
+        total_h = (self._MENU_BTN_H_PLAY + (n - 1) * self._MENU_BTN_H
+                   + (n - 1) * self._MENU_BTN_GAP)
+        start_y = SCREEN_HEIGHT // 2 - total_h // 2 + 120
         x = (SCREEN_WIDTH - self._MENU_BTN_W) // 2
-        return [
-            pygame.Rect(x, start_y + i * (self._MENU_BTN_H + self._MENU_BTN_GAP),
-                        self._MENU_BTN_W, self._MENU_BTN_H)
-            for i in range(n)
-        ]
+        rects = []
+        y = start_y
+        for i in range(n):
+            h = self._MENU_BTN_H_PLAY if i == 0 else self._MENU_BTN_H
+            rects.append(pygame.Rect(x, y, self._MENU_BTN_W, h))
+            y += h + self._MENU_BTN_GAP
+        return rects
 
     def main_menu_button_at(self, pos) -> "int | None":
         for i, rect in enumerate(self._main_menu_button_rects()):
@@ -589,22 +600,110 @@ class Renderer:
                 return i
         return None
 
-    def draw_main_menu(self, mouse_pos) -> None:
-        title = self.font_large.render("POPLUX", True, (80, 210, 80))
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 120)))
+    # One ball color per letter of POPLUX
+    _LOGO_COLORS = ["red", "blue", "green", "red", "yellow", "blue"]
+    _LOGO_LETTERS = list("POPLUX")
 
+    def draw_main_menu(self, mouse_pos) -> None:
+        cx = SCREEN_WIDTH // 2
+        t = pygame.time.get_ticks() / 1000.0
+
+        # --- Animated logo ---
+        # Pulsing glow behind the title
+        glow_alpha = int(60 + 40 * math.sin(t * 2.0))
+        glow_w, glow_h = 860, 140
+        glow_surf = pygame.Surface((glow_w, glow_h), pygame.SRCALPHA)
+        for r, a in ((glow_h // 2, glow_alpha // 3), (glow_h // 3, glow_alpha // 2), (glow_h // 4, glow_alpha)):
+            pygame.gfxdraw.filled_ellipse(glow_surf, glow_w // 2, glow_h // 2, glow_w // 2, r, (80, 220, 80, a))
+        self.screen.blit(glow_surf, glow_surf.get_rect(center=(cx, 118)))
+
+        # Letter-by-letter title — each letter tinted to its ball color
+        letter_surfs = []
+        letter_colors = [
+            tuple(min(255, c + 60) for c in BALL_COLORS[col])
+            for col in self._LOGO_COLORS
+        ]
+        for letter, color in zip(self._LOGO_LETTERS, letter_colors):
+            letter_surfs.append(self.font_large.render(letter, True, color))
+
+        total_w = sum(s.get_width() for s in letter_surfs) + 8 * (len(letter_surfs) - 1)
+        lx = cx - total_w // 2
+        logo_y = 48
+        for i, surf in enumerate(letter_surfs):
+            # Each letter bobs at a different phase
+            bob = math.sin(t * 2.5 + i * 0.55) * 7
+            self.screen.blit(surf, (lx, logo_y + bob))
+            lx += surf.get_width() + 8
+
+        # --- Colored ball row beneath the title ---
+        ball_y = 178
+        ball_r = 22
+        ball_spacing = ball_r * 2 + 14
+        total_bw = len(self._LOGO_COLORS) * ball_spacing - 14
+        bx = cx - total_bw // 2 + ball_r
+        for i, color_name in enumerate(self._LOGO_COLORS):
+            # Each ball pulses in size at its own phase
+            pulse = math.sin(t * 3.0 + i * 0.9) * 3
+            r = int(ball_r + pulse)
+            self._draw_ball(self.screen, color_name, bx, ball_y, r)
+            bx += ball_spacing
+
+        # --- Tagline ---
+        tagline = self.font_small.render("clear the chain before it reaches the hole", True, (140, 140, 140))
+        self.screen.blit(tagline, tagline.get_rect(center=(cx, 222)))
+
+        # --- Buttons ---
         rects = self._main_menu_button_rects()
-        for i, (rect, label) in enumerate(zip(rects, self._MENU_LABELS)):
+        for i, (rect, (label, fill, fill_h, border, border_h)) in enumerate(
+                zip(rects, self._MENU_BTNS)):
             hovered = rect.collidepoint(mouse_pos)
-            fill   = (60, 100, 60) if hovered else (35, 60, 35)
-            border = (100, 220, 100) if hovered else (55, 130, 55)
-            pygame.draw.rect(self.screen, fill, rect, border_radius=10)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=10)
-            txt = self.font_med.render(label, True, HUD_COLOR)
-            self.screen.blit(txt, txt.get_rect(center=rect.center))
+            col_fill   = fill_h   if hovered else fill
+            col_border = border_h if hovered else border
+            pygame.draw.rect(self.screen, col_fill,   rect, border_radius=10)
+            pygame.draw.rect(self.screen, col_border, rect, 2, border_radius=10)
+
+            # Accent bar on the left edge
+            accent = pygame.Rect(rect.x, rect.y + 10, 5, rect.h - 20)
+            pygame.draw.rect(self.screen, col_border, accent, border_radius=3)
+
+            # Hand-drawn icon to the left of the label
+            font     = self.font_large if i == 0 else self.font_med
+            txt_surf = font.render(label, True, HUD_COLOR)
+            icon_w   = 40
+            gap      = 20
+            total_w  = icon_w + gap + txt_surf.get_width()
+            ix       = rect.centerx - total_w // 2
+            icy      = rect.centery
+            is2      = icon_w // 2
+
+            if i == 0:   # PLAY — triangle
+                pts = [(ix, icy - is2), (ix, icy + is2), (ix + icon_w, icy)]
+                pygame.gfxdraw.filled_polygon(self.screen, pts, col_border)
+                pygame.gfxdraw.aapolygon(self.screen, pts, col_border)
+            elif i == 1:  # SELECT LEVEL — 2×2 grid of squares
+                sq = is2 - 3
+                for gx, gy in ((ix, icy - is2), (ix + sq + 4, icy - is2),
+                               (ix, icy + 4),   (ix + sq + 4, icy + 4)):
+                    pygame.draw.rect(self.screen, col_border, (gx, gy, sq, sq), border_radius=2)
+            elif i == 2:  # RECORDS — trophy cup (circle + stem + base)
+                pygame.gfxdraw.aacircle(self.screen, ix + is2, icy - 6, is2 - 2, col_border)
+                pygame.draw.line(self.screen, col_border, (ix + is2, icy + is2 - 8), (ix + is2, icy + is2), 3)
+                pygame.draw.line(self.screen, col_border, (ix + 4, icy + is2), (ix + icon_w - 4, icy + is2), 3)
+            elif i == 3:  # SETTINGS — gear (circle + 4 nubs)
+                pygame.gfxdraw.aacircle(self.screen, ix + is2, icy, is2 - 6, col_border)
+                for angle in (0, math.pi / 2, math.pi, 3 * math.pi / 2):
+                    nx = int(ix + is2 + math.cos(angle) * (is2 - 2))
+                    ny = int(icy      + math.sin(angle) * (is2 - 2))
+                    pygame.gfxdraw.filled_circle(self.screen, nx, ny, 5, col_border)
+            elif i == 4:  # QUIT — X
+                pygame.draw.line(self.screen, col_border, (ix + 4, icy - is2 + 4), (ix + icon_w - 4, icy + is2 - 4), 3)
+                pygame.draw.line(self.screen, col_border, (ix + icon_w - 4, icy - is2 + 4), (ix + 4, icy + is2 - 4), 3)
+
+            self.screen.blit(txt_surf, (ix + icon_w + gap,
+                                        rect.centery - txt_surf.get_height() // 2))
 
         hint = self.font_small.render("ESC to quit", True, (120, 120, 120))
-        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
+        self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #
     # Pause menu                                                           #
