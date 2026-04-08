@@ -30,18 +30,18 @@ class _Asteroid:
         self.verts = verts
 
 
-_NUM_ASTEROIDS = 20
+_NUM_ASTEROIDS = 35
 
 
 def _make_asteroid() -> _Asteroid:
-    n = random.randint(6, 9)
-    base_r = random.uniform(4, 12)
+    n = random.randint(6, 10)
+    base_r = random.uniform(6, 28)
     verts = []
     for i in range(n):
         theta = 2 * math.pi * i / n + random.uniform(-0.28, 0.28)
         r = base_r * random.uniform(0.55, 1.35)
         verts.append((math.cos(theta) * r, math.sin(theta) * r))
-    speed = random.uniform(10, 35)
+    speed = random.uniform(15, 60)
     dir_a = random.uniform(0, 2 * math.pi)
     return _Asteroid(
         x=random.uniform(0, SCREEN_WIDTH),
@@ -49,7 +49,7 @@ def _make_asteroid() -> _Asteroid:
         dx=math.cos(dir_a) * speed,
         dy=math.sin(dir_a) * speed,
         angle=random.uniform(0, 2 * math.pi),
-        spin=random.choice([-1, 1]) * random.uniform(0.3, 1.4),
+        spin=random.choice([-1, 1]) * random.uniform(0.3, 1.8),
         verts=verts,
     )
 
@@ -68,16 +68,16 @@ class Background:
         surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         surf.fill((4, 4, 14))
         rng = random.Random(42)
-        for _ in range(260):
+        for _ in range(400):
             x = rng.randint(0, SCREEN_WIDTH)
             y = rng.randint(0, SCREEN_HEIGHT)
-            kind = rng.choices(['dim', 'mid', 'bright'], weights=[55, 35, 10])[0]
+            kind = rng.choices(['dim', 'mid', 'bright'], weights=[50, 35, 15])[0]
             if kind == 'dim':
-                r, brightness = 1, rng.randint(80, 160)
+                r, brightness = 1, rng.randint(100, 180)
             elif kind == 'mid':
-                r, brightness = 1, rng.randint(160, 210)
+                r, brightness = 1, rng.randint(180, 225)
             else:
-                r, brightness = 2, rng.randint(220, 255)
+                r, brightness = 2, rng.randint(230, 255)
             tint = rng.choice([(10, 10, 40), (0, 0, 0), (30, 20, 0)])
             col = tuple(min(255, brightness + t) for t in tint)
             if r == 1:
@@ -86,8 +86,8 @@ class Background:
                 _aa_circle(surf, col, (x, y), r)
             if kind == 'bright':
                 dim = tuple(c // 3 for c in col)
-                pygame.draw.line(surf, dim, (x - 6, y), (x + 6, y), 1)
-                pygame.draw.line(surf, dim, (x, y - 6), (x, y + 6), 1)
+                pygame.draw.line(surf, dim, (x - 8, y), (x + 8, y), 1)
+                pygame.draw.line(surf, dim, (x, y - 8), (x, y + 8), 1)
         return surf
 
     def update(self, dt: float) -> None:
@@ -114,5 +114,8 @@ class Background:
                  int(a.y + vx * sa + vy * ca))
                 for vx, vy in a.verts
             ]
-            pygame.draw.polygon(surface, (48, 45, 41), pts)
-            pygame.draw.polygon(surface, (78, 73, 66), pts, 1)
+            pygame.draw.polygon(surface, (62, 58, 52), pts)
+            pygame.draw.polygon(surface, (95, 90, 80), pts, 1)
+            # Highlight edge — top-left facing verts get a lighter stroke
+            if len(pts) >= 2:
+                pygame.draw.line(surface, (110, 105, 95), pts[0], pts[1], 1)

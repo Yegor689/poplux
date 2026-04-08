@@ -60,15 +60,32 @@ class Renderer:
     def draw_path(self, path) -> None:
         if len(path.waypoints) < 2:
             return
-        color = (55, 55, 55)
-        # Draw segments then fill every joint with a circle to eliminate gaps
         pts = [(int(x), int(y)) for x, y in path.waypoints]
+        color = (55, 55, 55)
         pygame.draw.lines(self.screen, color, False, pts, BALL_RADIUS * 2)
         for x, y in pts:
             self._aa_circle(self.screen, color, (x, y), BALL_RADIUS)
+
+        # Black hole at the end
         hole_x, hole_y = path.waypoints[-1]
-        self._aa_circle(self.screen, HOLE_COLOR, (int(hole_x), int(hole_y)), BALL_RADIUS + 4)
-        pygame.gfxdraw.aacircle(self.screen, int(hole_x), int(hole_y), BALL_RADIUS + 4, (150, 50, 50))
+        hx, hy = int(hole_x), int(hole_y)
+        t = pygame.time.get_ticks() / 1000.0
+
+        # Outer gravitational rings — pulsing alpha via SRCALPHA surface
+        for ring_r, base_alpha in ((BALL_RADIUS + 28, 35), (BALL_RADIUS + 18, 55), (BALL_RADIUS + 10, 80)):
+            pulse = int(base_alpha + 20 * math.sin(t * 3.0 + ring_r * 0.1))
+            sz = (ring_r + 2) * 2
+            rs = pygame.Surface((sz, sz), pygame.SRCALPHA)
+            pygame.gfxdraw.aacircle(rs, ring_r, ring_r, ring_r, (180, 60, 255, pulse))
+            self.screen.blit(rs, (hx - ring_r, hy - ring_r))
+
+        # Accretion disk — bright inner ring
+        pygame.gfxdraw.aacircle(self.screen, hx, hy, BALL_RADIUS + 6, (220, 100, 255))
+        pygame.gfxdraw.aacircle(self.screen, hx, hy, BALL_RADIUS + 5, (255, 140, 255))
+
+        # Black hole core
+        self._aa_circle(self.screen, (4, 0, 8),   (hx, hy), BALL_RADIUS + 4)
+        self._aa_circle(self.screen, (0, 0, 0),   (hx, hy), BALL_RADIUS + 2)
 
     def _draw_ball(self, surface: pygame.Surface, color_name: str, cx: int, cy: int, radius: int,
                    spin_angle: float = 0.0, tangent: float = 0.0) -> None:
@@ -677,9 +694,12 @@ class Renderer:
             gap       = 20
             total_w   = icon_surf.get_width() + gap + txt_surf.get_width()
             ix        = rect.centerx - total_w // 2
-            self.screen.blit(icon_surf, (ix, rect.centery - icon_surf.get_height() // 2))
-            self.screen.blit(txt_surf,  (ix + icon_surf.get_width() + gap,
-                                         rect.centery - txt_surf.get_height() // 2))
+            # Align icon to label's cap-height midpoint using ascent offset
+            txt_top  = rect.centery - txt_surf.get_height() // 2
+            txt_cap_mid = txt_top + font.get_ascent() // 2
+            icon_y   = txt_cap_mid - icon_font.get_ascent() // 2
+            self.screen.blit(icon_surf, (ix, icon_y))
+            self.screen.blit(txt_surf,  (ix + icon_surf.get_width() + gap, txt_top))
 
         hint = self.font_small.render("ESC to quit", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
@@ -976,7 +996,7 @@ class Renderer:
                 rect.left  = x if align == "l" else rect.left
                 self.screen.blit(surf, rect)
 
-        scroll_hint = "  ·  ↑↓ or scroll to navigate" if len(records) > max_rows else ""
+        scroll_hint = "  ·  up/down or scroll to navigate" if len(records) > max_rows else ""
         hint = self.font_small.render(f"ESC  ·  main menu{scroll_hint}", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
