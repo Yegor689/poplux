@@ -62,6 +62,7 @@ class ScorePopup:
     lifetime: float
     max_lifetime: float
     vy: float = -110.0  # pixels per second upward
+    cascade_level: int = 1
 
     def update(self, dt: float) -> None:
         self.y += self.vy * dt

@@ -51,6 +51,8 @@ def reload_levels():
     LEVELS[:]      = data
 
 
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "settings.json")
+
 class Settings:
     """Global mutable settings — single instance, imported everywhere as needed."""
     def __init__(self):
@@ -58,6 +60,39 @@ class Settings:
         self.sfx_volume: float = 0.5     # 0.0 – 1.0
         self.colorblind_mode: bool = False
         self.fullscreen: bool = True
+        self.show_fps: bool = False
+        self.danger_vignette: bool = True
+        self.particles: bool = True
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            with open(_SETTINGS_FILE) as f:
+                data = json.load(f)
+            self.music_volume    = float(data.get("music_volume",    self.music_volume))
+            self.sfx_volume      = float(data.get("sfx_volume",      self.sfx_volume))
+            self.fullscreen      = bool(data.get("fullscreen",       self.fullscreen))
+            self.colorblind_mode = bool(data.get("colorblind_mode",  self.colorblind_mode))
+            self.show_fps        = bool(data.get("show_fps",         self.show_fps))
+            self.danger_vignette = bool(data.get("danger_vignette",  self.danger_vignette))
+            self.particles       = bool(data.get("particles",        self.particles))
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass  # use defaults
+
+    def save(self) -> None:
+        try:
+            with open(_SETTINGS_FILE, "w") as f:
+                json.dump({
+                    "music_volume":    self.music_volume,
+                    "sfx_volume":      self.sfx_volume,
+                    "fullscreen":      self.fullscreen,
+                    "colorblind_mode": self.colorblind_mode,
+                    "show_fps":        self.show_fps,
+                    "danger_vignette": self.danger_vignette,
+                    "particles":       self.particles,
+                }, f, indent=2)
+        except OSError:
+            pass
 
 
 SETTINGS = Settings()

@@ -27,6 +27,7 @@ class Game:
         self.renderer = Renderer(self._logical)
         self.state = "main_menu"
         self._records_scroll = 0
+        self._level_select_idx = 0
         self.current_level_idx = 0
         self.path = None
         self.frog = None
@@ -41,6 +42,7 @@ class Game:
         self._frame_mouse = (0, 0)
         self.background = Background()
         self._pre_pause_state = "playing"  # state to restore when unpausing
+        self._overlay_t: float = 1.0        # 0→1 fade-in for overlays; 1.0 = fully faded in
         self.active_cheats: set = set()
         self._cheat_input: str = ""
         self._cheat_message: str = ""
@@ -65,6 +67,7 @@ class Game:
     def _init_game_state(self, level_idx: int) -> None:
         self._current_music = ""  # force music reload on next _update_music call
         self.current_level_idx = level_idx
+        self._level_select_idx = level_idx  # remember last played level (item 5)
         cfg = LEVELS[level_idx]
         self.path = Path(cfg)
         raw_frog = cfg.get("frog_pos")
@@ -201,6 +204,15 @@ class Game:
             loops = 0 if track == self._music_finish else -1
             pygame.mixer.music.play(loops)
 
+    _OVERLAY_STATES = {"paused", "lose", "level_complete", "game_complete"}
+    _OVERLAY_FADE_DUR = 0.25   # seconds for full fade-in
+
+    def _set_state(self, new_state: str) -> None:
+        """Transition to a new state, resetting the overlay fade when needed."""
+        if new_state in self._OVERLAY_STATES and self.state not in self._OVERLAY_STATES:
+            self._overlay_t = 0.0
+        self.state = new_state
+
     def run(self) -> None:
         running = True
         while running:
@@ -208,6 +220,8 @@ class Game:
             self._frame_mouse = self._logical_mouse()
             running = self._handle_events()
             self.background.update(dt)
+            if self._overlay_t < 1.0:
+                self._overlay_t = min(1.0, self._overlay_t + dt / self._OVERLAY_FADE_DUR)
             if self.state in ("playing", "combo_test"):
                 self._update(dt)
             self._update_music()
@@ -253,17 +267,28 @@ class Game:
                     action = self.renderer.settings_interact(mouse_pos, SETTINGS)
                     if action == "volume_changed":
                         pygame.mixer.music.set_volume(SETTINGS.music_volume)
+                        SETTINGS.save()
+                    elif action == "sfx_changed":
+                        SETTINGS.save()
+            if event.type == pygame.MOUSEWHEEL and self.state == "level_select":
+                self._level_select_idx = max(0, min(
+                    self._level_select_idx - event.y,
+                    len(LEVELS) - 1
+                ))
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == "main_menu":
                         return False
                     elif self.state in ("playing", "combo_test"):
                         self._pre_pause_state = self.state
-                        self.state = "paused"
+                        self._set_state("paused")
                     elif self.state == "paused":
                         self.state = self._pre_pause_state
                     else:
                         self.state = "main_menu"
+                # Space resumes from pause (item 1)
+                if event.key == pygame.K_SPACE and self.state == "paused":
+                    self.state = self._pre_pause_state
                 if self.state == "records":
                     all_records = records_store.top()
                     max_rows = self.renderer.records_max_rows()
@@ -271,6 +296,22 @@ class Game:
                         self._records_scroll = min(self._records_scroll + 1, max(0, len(all_records) - max_rows))
                     elif event.key == pygame.K_UP:
                         self._records_scroll = max(0, self._records_scroll - 1)
+                if self.state == "level_select":
+                    if event.key == pygame.K_DOWN:
+                        self._level_select_idx = min(self._level_select_idx + 1, len(LEVELS) - 1)
+                    elif event.key == pygame.K_UP:
+                        self._level_select_idx = max(0, self._level_select_idx - 1)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        self._init_game_state(self._level_select_idx)
+                # R and Enter on level_complete (items 2, 3)
+                if self.state == "level_complete":
+                    if event.key == pygame.K_r:
+                        self._init_game_state(self.current_level_idx)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        if self.current_level_idx + 1 < len(LEVELS):
+                            self._init_game_state(self.current_level_idx + 1)
+                        else:
+                            self.state = "game_complete"
                 if event.key == pygame.K_r and self.state == "lose":
                     if self._endless_mode:
                         self._init_endless_mode()
@@ -315,10 +356,13 @@ class Game:
                     elif btn == 4:
                         return False
                 elif self.state == "level_select":
-                    idx = self.renderer.level_button_at(mouse_pos)
-                    if idx is not None:
+                    action = self.renderer.level_select_interact(mouse_pos, self._level_select_idx)
+                    if action == "play":
                         sounds.play("menu_click", 0.4)
-                        self._init_game_state(idx)
+                        self._init_game_state(self._level_select_idx)
+                    elif isinstance(action, int):
+                        sounds.play("menu_click", 0.4)
+                        self._level_select_idx = action
                 elif self.state in ("playing", "combo_test"):
                     ball = self.frog.shoot()
                     sounds.play("shoot", 0.35)
@@ -354,15 +398,28 @@ class Game:
                             self._init_game_state(self.current_level_idx)
                     elif btn == 2:
                         self.state = "main_menu"
-                elif self.state in ("lose", "game_complete"):
+                elif self.state == "lose":
+                    btn = self.renderer.lose_button_at(mouse_pos)
+                    if btn == 0:  # retry
+                        if self._endless_mode:
+                            self._init_endless_mode()
+                        else:
+                            self._init_game_state(self.current_level_idx)
+                    else:  # menu or anywhere else
+                        self.state = "main_menu"
+                elif self.state == "game_complete":
                     self.state = "main_menu"
                 elif self.state == "settings":
                     action = self.renderer.settings_interact(mouse_pos, SETTINGS)
                     if action == "volume_changed":
                         pygame.mixer.music.set_volume(SETTINGS.music_volume)
+                        SETTINGS.save()
                     elif action == "fullscreen_toggled":
                         flags = pygame.FULLSCREEN if SETTINGS.fullscreen else 0
                         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags)
+                        SETTINGS.save()
+                    elif action == "setting_toggled":
+                        SETTINGS.save()
         if self.state in ("playing", "combo_test"):
             self.frog.update(self._frame_mouse)
         return True
@@ -388,14 +445,14 @@ class Game:
         cy = sum(p[1] for p in positions) / len(positions)
         cascade_level = self.chain.recent_pops[0][2]
         total = len(self.chain.recent_pops) * cascade_level
-        text = f"+{total}" if cascade_level == 1 else f"+{total}  ×{cascade_level}"
+        text = f"+{total}" if cascade_level == 1 else f"+{total}  x{cascade_level}"
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
         if cascade_level > 1:
             sounds.play_cascade(cascade_level, 0.5)
         else:
             sounds.play("pop", 0.45)
         life = 1.1
-        self.score_popups.append(ScorePopup(cx, cy, text, color, life, life))
+        self.score_popups.append(ScorePopup(cx, cy, text, color, life, life, cascade_level=cascade_level))
 
         for (_, color_name, cascade_level), (pcx, pcy) in zip(
                 self.chain.recent_pops, positions):
@@ -427,6 +484,8 @@ class Game:
 
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
+        if self._overlay_t < 1.0:
+            self._overlay_t = min(1.0, self._overlay_t + dt / self._OVERLAY_FADE_DUR)
         self.frog.tick(dt)
         if self._slowdown_timer > 0:
             self._slowdown_timer = max(0.0, self._slowdown_timer - dt)
@@ -566,15 +625,15 @@ class Game:
                 records_store.save(level_name, self.score, self.elapsed_time)
                 if self.current_level_idx + 1 < len(LEVELS):
                     sounds.play("level_complete", 0.6)
-                    self.state = "level_complete"
+                    self._set_state("level_complete")
                 else:
                     sounds.play("level_complete", 0.6)
-                    self.state = "game_complete"
+                    self._set_state("game_complete")
             elif self.chain.front_distance() >= self.path.total_length:
                 if self._endless_mode:
                     records_store.save("Endless", self.score, self.elapsed_time)
                 sounds.play("game_over", 0.5)
-                self.state = "lose"
+                self._set_state("lose")
 
     def _out_of_bounds(self, ball) -> bool:
         return (ball.x < -BALL_RADIUS or ball.x > SCREEN_WIDTH + BALL_RADIUS or
@@ -702,7 +761,7 @@ class Game:
         elif self.state == "cheat_menu":
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
-            self.renderer.draw_level_select(mouse_pos, records_store.best_by_level())
+            self.renderer.draw_level_select(mouse_pos, self._level_select_idx, records_store.best_by_level())
         elif self.state == "records":
             self.renderer.draw_records(records_store.top(), self._records_scroll)
         elif self.state == "settings":
@@ -712,11 +771,14 @@ class Game:
             self.renderer.draw_coins(self.coins)
             self.renderer.draw_aim_powerups(self.aim_powerups)
             self.renderer.draw_chain(self.chain, self.path)
-            self.renderer.draw_particles(self.particles)
+            if SETTINGS.particles:
+                self.renderer.draw_particles(self.particles)
             self.renderer.draw_score_popups(self.score_popups)
             self.renderer.draw_fired_balls(self.fired_balls)
             self.renderer.draw_aim_line(self.frog, self._aim_timer)
             self.renderer.draw_frog(self.frog)
+            _front = self.chain.front_distance() if self.chain.balls else 0.0
+            _path_len = self.path.total_length if self.path else 1.0
             self.renderer.draw_hud(
                 remaining=len(self.chain.balls),
                 spawned=self.spawned_count,
@@ -727,25 +789,21 @@ class Game:
                 show_debug=self.show_debug_hud,
                 aim_timer=self._aim_timer,
                 slowdown_timer=self._slowdown_timer,
+                danger_frac=_front / _path_len if SETTINGS.danger_vignette else 0.0,
+                fps=self.clock.get_fps(),
             )
+            _ov_alpha = int(self._overlay_t * 255)
             if self.state == "paused":
-                self.renderer.draw_pause_menu(mouse_pos)
+                self.renderer.draw_pause_menu(mouse_pos, overlay_alpha=_ov_alpha)
             elif self.state == "level_complete":
                 next_idx = self.current_level_idx + 1
                 next_name = LEVELS[next_idx]["name"] if next_idx < len(LEVELS) else ""
-                self.renderer.draw_level_complete(mouse_pos, next_name)
+                self.renderer.draw_level_complete(mouse_pos, next_name, overlay_alpha=_ov_alpha)
             elif self.state == "game_complete":
-                self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time)
+                self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time, overlay_alpha=_ov_alpha)
             elif self.state == "lose":
-                if self._endless_mode:
-                    mins = int(self.elapsed_time) // 60
-                    secs = int(self.elapsed_time) % 60
-                    self.renderer.draw_overlay(
-                        "GAME OVER",
-                        f"Score: {self.score:,}  ·  {mins}:{secs:02d}  ·  R retry  ·  Click for menu",
-                    )
-                else:
-                    self.renderer.draw_overlay("GAME OVER", "R to retry  ·  Click to return to menu")
+                self.renderer.draw_lose(mouse_pos, self.score, self.elapsed_time,
+                                        is_endless=self._endless_mode, overlay_alpha=_ov_alpha)
 
         scale, ox, oy, scaled_w, scaled_h = self._scale_rect()
         scaled = pygame.transform.smoothscale(self._logical, (scaled_w, scaled_h))
