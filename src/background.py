@@ -95,7 +95,7 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     # 2. Texture: noisy grey-brown fill via numpy                         #
     # ------------------------------------------------------------------ #
     # Base colour palette for this asteroid (slight per-asteroid variation)
-    base_v = rng.randint(48, 68)
+    base_v = rng.randint(58, 78)
     tint_r = rng.randint(-4, 8)   # slight warm/cool tint
     tint_b = rng.randint(-6, 2)
 
@@ -147,10 +147,10 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     nx = dx_arr / dist_safe
     ny = dy_arr / dist_safe
     diffuse = -(nx * light_dir[0] + ny * light_dir[1])   # −1..1, positive = lit
-    shading = (diffuse * 22).astype(np.float32)           # ±22 brightness swing
+    shading = (diffuse * 10).astype(np.float32)           # ±10 brightness swing
 
     # Soft vignette: darken edges slightly
-    vignette = np.clip((1.0 - norm_dist) * 18, -10, 0).astype(np.float32)
+    vignette = np.clip((1.0 - norm_dist) * 10, -6, 0).astype(np.float32)
 
     # Combine
     v = base_v + noise + shading + vignette

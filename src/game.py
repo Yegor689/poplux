@@ -59,6 +59,7 @@ class Game:
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
         self._spawn_hold: float = 0.0   # pause spawning briefly after bomb removal
+        self._display_score: float = 0.0  # animated score counter
         self._frame_chain_positions: list = []
         self._current_music: str = ""
         _assets = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
@@ -83,6 +84,7 @@ class Game:
         self._total_balls = cfg["total_balls"]
         self.elapsed_time = 0.0
         self.score = 0
+        self._display_score = 0.0
         self.show_debug_hud = False
         self._spawn_hold = 0.0
 
@@ -131,6 +133,7 @@ class Game:
         self._total_balls = 999_999
         self.elapsed_time = 0.0
         self.score = 0
+        self._display_score = 0.0
         self.show_debug_hud = False
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
@@ -139,10 +142,10 @@ class Game:
         self._pre_pause_state = "combo_test"
         self.state = "combo_test"
 
-    def _init_endless_mode(self) -> None:
-        """Endless mode: Level 1 layout, infinite balls, chain speeds up over time."""
-        cfg = LEVELS[0]
-        self.current_level_idx = 0
+    def _init_endless_mode(self, level_idx: int = 0) -> None:
+        """Endless mode: use any level's path, infinite balls, chain speeds up over time."""
+        cfg = LEVELS[level_idx]
+        self.current_level_idx = level_idx
         self.path = Path(cfg)
         raw_frog = cfg.get("frog_pos")
         frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
@@ -155,6 +158,7 @@ class Game:
         self._total_balls = 999_999
         self.elapsed_time = 0.0
         self.score = 0
+        self._display_score = 0.0
         self.show_debug_hud = False
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
@@ -335,7 +339,7 @@ class Game:
                             self.state = "game_complete"
                 if event.key == pygame.K_r and self.state == "lose":
                     if self._endless_mode:
-                        self._init_endless_mode()
+                        self._init_endless_mode(self.current_level_idx)
                     else:
                         self._init_game_state(self.current_level_idx)
                 if event.key == pygame.K_r and self.state == "combo_test":
@@ -381,6 +385,9 @@ class Game:
                     if action == "play":
                         sounds.play("menu_click", 0.4)
                         self._init_game_state(self._level_select_idx)
+                    elif action == "endless":
+                        sounds.play("menu_click", 0.4)
+                        self._init_endless_mode(self._level_select_idx)
                     elif isinstance(action, int):
                         sounds.play("menu_click", 0.4)
                         self._level_select_idx = action
@@ -414,7 +421,7 @@ class Game:
                         if self._pre_pause_state == "combo_test":
                             self._init_combo_test()
                         elif self._endless_mode:
-                            self._init_endless_mode()
+                            self._init_endless_mode(self.current_level_idx)
                         else:
                             self._init_game_state(self.current_level_idx)
                     elif btn == 2:
@@ -423,7 +430,7 @@ class Game:
                     btn = self.renderer.lose_button_at(mouse_pos)
                     if btn == 0:  # retry
                         if self._endless_mode:
-                            self._init_endless_mode()
+                            self._init_endless_mode(self.current_level_idx)
                         else:
                             self._init_game_state(self.current_level_idx)
                     else:  # menu or anywhere else
@@ -465,8 +472,9 @@ class Game:
         cx = sum(p[0] for p in positions) / len(positions)
         cy = sum(p[1] for p in positions) / len(positions)
         cascade_level = self.chain.recent_pops[0][2]
-        total = len(self.chain.recent_pops) * cascade_level
-        text = f"+{total}" if cascade_level == 1 else f"+{total}  x{cascade_level}"
+        n_balls = len(self.chain.recent_pops)
+        total = n_balls * cascade_level * 10
+        text = f"+{total:,}" if cascade_level == 1 else f"+{n_balls * 10:,}  x{cascade_level}"
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
         if cascade_level > 1:
             sounds.play_cascade(cascade_level, 0.5)
@@ -477,7 +485,7 @@ class Game:
 
         for (_, color_name, cascade_level), (pcx, pcy) in zip(
                 self.chain.recent_pops, positions):
-            self.score += cascade_level  # 1 pt × combo multiplier per ball popped
+            self.score += cascade_level * 10  # 10 pts × combo multiplier per ball popped
             base = BALL_COLORS.get(color_name, (200, 200, 200))
             light = tuple(min(255, c + 60) for c in base)
             for _ in range(self._PARTICLE_COUNT):
@@ -505,6 +513,10 @@ class Game:
 
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
+        # Animate score counter: close gap in ~0.3s, minimum 50 pts/s so it always arrives
+        if self._display_score < self.score:
+            step = max(50.0, (self.score - self._display_score) / 0.3) * dt
+            self._display_score = min(float(self.score), self._display_score + step)
         if self._overlay_t < 1.0:
             self._overlay_t = min(1.0, self._overlay_t + dt / self._OVERLAY_FADE_DUR)
         self.frog.tick(dt)
@@ -652,7 +664,8 @@ class Game:
                     self._set_state("game_complete")
             elif self.chain.front_distance() >= self.path.total_length:
                 if self._endless_mode:
-                    records_store.save("Endless", self.score, self.elapsed_time)
+                    endless_key = f"Endless (Lvl {self.current_level_idx + 1})"
+                    records_store.save(endless_key, self.score, self.elapsed_time)
                 sounds.play("game_over", 0.5)
                 self._set_state("lose")
 
@@ -703,7 +716,7 @@ class Game:
             if math.hypot(bx - hx, by - hy) <= self._BOMB_RADIUS:
                 indices.append(i)
                 positions.append((bx, by))
-                self.score += 5
+                self.score += 50
                 base = BALL_COLORS.get(b.color, (200, 200, 200))
                 light = tuple(min(255, c + 60) for c in base)
                 for _ in range(self._PARTICLE_COUNT):
@@ -721,7 +734,7 @@ class Game:
         if positions:
             cx = sum(p[0] for p in positions) / len(positions)
             cy = sum(p[1] for p in positions) / len(positions)
-            total = len(indices) * 5
+            total = len(indices) * 50
             self.score_popups.append(
                 ScorePopup(cx, cy, f"BOOM +{total}", (255, 140, 0), 1.4, 1.4)
             )
@@ -739,10 +752,10 @@ class Game:
                     continue
                 dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
                 if dist_sq <= (ball.radius + coin.radius) ** 2:
-                    self.score += 10
+                    self.score += 100
                     sounds.play("coin", 0.4)
                     self.score_popups.append(
-                        ScorePopup(coin.x, coin.y, "+10", (255, 215, 0), 1.1, 1.1)
+                        ScorePopup(coin.x, coin.y, "+100", (255, 215, 0), 1.1, 1.1)
                     )
                     coins_hit.append(coin)
                     balls_used.append(ball)
@@ -805,9 +818,9 @@ class Game:
                 remaining=len(self.chain.balls),
                 spawned=self.spawned_count,
                 total=self._total_balls,
-                level_name="COMBO TEST" if self._pre_pause_state == "combo_test" else ("ENDLESS" if self._endless_mode else LEVELS[self.current_level_idx]["name"]),
+                level_name="COMBO TEST" if self._pre_pause_state == "combo_test" else (f"ENDLESS  {LEVELS[self.current_level_idx]['name']}" if self._endless_mode else LEVELS[self.current_level_idx]["name"]),
                 elapsed_time=self.elapsed_time,
-                score=self.score,
+                score=int(self._display_score),
                 show_debug=self.show_debug_hud,
                 aim_timer=self._aim_timer,
                 slowdown_timer=self._slowdown_timer,

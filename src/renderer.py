@@ -658,9 +658,10 @@ class Renderer:
     # Right panel: detail area
     _LS_DETAIL_X   = 720
     _LS_DETAIL_W   = SCREEN_WIDTH - 720 - 80
-    # Play button
-    _LS_PLAY_W     = 340
-    _LS_PLAY_H     = 90
+    # Play / Endless buttons
+    _LS_BTN_W      = 260
+    _LS_BTN_H      = 90
+    _LS_BTN_GAP    = 20
 
     def _ls_row_rects(self, scroll: int = 0) -> list[pygame.Rect]:
         rects = []
@@ -672,14 +673,25 @@ class Renderer:
 
     def _ls_play_rect(self) -> pygame.Rect:
         cx = self._LS_DETAIL_X + self._LS_DETAIL_W // 2
-        return pygame.Rect(cx - self._LS_PLAY_W // 2,
-                           SCREEN_HEIGHT - self._LS_PLAY_H - 60,
-                           self._LS_PLAY_W, self._LS_PLAY_H)
+        total = self._LS_BTN_W * 2 + self._LS_BTN_GAP
+        left = cx - total // 2
+        return pygame.Rect(left, SCREEN_HEIGHT - self._LS_BTN_H - 60,
+                           self._LS_BTN_W, self._LS_BTN_H)
+
+    def _ls_endless_rect(self) -> pygame.Rect:
+        cx = self._LS_DETAIL_X + self._LS_DETAIL_W // 2
+        total = self._LS_BTN_W * 2 + self._LS_BTN_GAP
+        left = cx - total // 2
+        return pygame.Rect(left + self._LS_BTN_W + self._LS_BTN_GAP,
+                           SCREEN_HEIGHT - self._LS_BTN_H - 60,
+                           self._LS_BTN_W, self._LS_BTN_H)
 
     def level_select_interact(self, pos, selected_idx: int, scroll: int = 0) -> "int | str | None":
-        """Returns level index if a list row clicked, 'play' if play button clicked."""
+        """Returns level index if a list row clicked, 'play'/'endless' if buttons clicked."""
         if self._ls_play_rect().collidepoint(pos):
             return "play"
+        if self._ls_endless_rect().collidepoint(pos):
+            return "endless"
         for i, rect in enumerate(self._ls_row_rects(scroll)):
             if rect.collidepoint(pos):
                 return i
@@ -813,7 +825,17 @@ class Renderer:
         play_txt = self.font_med.render("PLAY", True, HUD_COLOR)
         self.screen.blit(play_txt, play_txt.get_rect(center=play_rect.center))
 
-        hint = self.font_small.render("up/down or click to select  ·  Enter to play  ·  ESC back",
+        # Endless button
+        end_rect = self._ls_endless_rect()
+        end_hov  = end_rect.collidepoint(mouse_pos)
+        pygame.draw.rect(self.screen, (80, 40, 110) if end_hov else (50, 25, 75),
+                         end_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (200, 100, 255) if end_hov else (130, 60, 180),
+                         end_rect, 2, border_radius=10)
+        end_txt = self.font_med.render("ENDLESS", True, HUD_COLOR)
+        self.screen.blit(end_txt, end_txt.get_rect(center=end_rect.center))
+
+        hint = self.font_small.render("up/down or click to select  ·  Enter to play  ·  ESC back  ·  click ENDLESS for infinite mode",
                                       True, (90, 90, 100))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
