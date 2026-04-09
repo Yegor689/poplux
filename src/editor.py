@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import pygame
 import pygame.gfxdraw
-from path import Path
+from path import Path, _PATH_SCALE_X, _PATH_SCALE_Y, _PATH_X_OFFSET
 from settings import SCREEN_WIDTH, SCREEN_HEIGHT, BALL_RADIUS
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -48,6 +48,14 @@ C = {
 LEVELS_DIR = os.path.join(os.path.dirname(__file__), "levels")
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+def to_screen(pos):
+    """Convert authored (1280×960) coordinates to logical screen coordinates."""
+    return (pos[0] * _PATH_SCALE_X + _PATH_X_OFFSET, pos[1] * _PATH_SCALE_Y)
+
+def from_screen(pos):
+    """Convert logical screen coordinates back to authored (1280×960) coordinates."""
+    return ((pos[0] - _PATH_X_OFFSET) / _PATH_SCALE_X, pos[1] / _PATH_SCALE_Y)
 
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
@@ -144,7 +152,7 @@ class Editor:
 
         self._ui_hits: list[tuple] = []
         self._panel_w: int = PANEL_W
-        self._sidebar_x: int = SCREEN_WIDTH - PANEL_W  # updated each frame by main loop
+        self._sidebar_x: int = SCREEN_WIDTH  # canvas ends here; sidebar starts
 
         self.font    = pygame.font.SysFont(None, 26)
         self.font_sm = pygame.font.SysFont(None, 21)
@@ -257,13 +265,14 @@ class Editor:
                 self.dragging_coin_idx = None
                 self.dragging_aim_idx = None
         elif event.type == pygame.MOUSEMOTION:
+            apos = from_screen(event.pos)
             if self.dragging_idx is not None and self.mode == MODE_WP:
-                self.waypoints[self.dragging_idx] = event.pos
+                self.waypoints[self.dragging_idx] = apos
                 self._rebuild_path()
             elif self.dragging_coin_idx is not None:
-                self.coin_spots[self.dragging_coin_idx] = event.pos
+                self.coin_spots[self.dragging_coin_idx] = apos
             elif self.dragging_aim_idx is not None:
-                self.aim_spots[self.dragging_aim_idx] = event.pos
+                self.aim_spots[self.dragging_aim_idx] = apos
 
     def _on_key(self, event):
         if self.filename_focused:
@@ -326,8 +335,14 @@ class Editor:
     def _on_mouse_down(self, event):
         pos = event.pos
 
-        # sidebar intercepts all clicks (use stored panel boundary)
-        if pos[0] >= self._sidebar_x:
+        # Sidebar events arrive in screen-space; canvas events in logical-space.
+        # A click in the sidebar has pos[0] >= _sidebar_x (screen coords).
+        # A click on the canvas has pos[0] < SCREEN_WIDTH (logical coords, 0-1280).
+        # We distinguish them: if _sidebar_x is stored (screen-space) and pos came
+        # from the sidebar path, pos[0] will be >= _sidebar_x. Canvas logical coords
+        # are always < SCREEN_WIDTH (1280), while _sidebar_x > SCREEN_WIDTH when scaled.
+        in_sidebar = pos[0] >= self._sidebar_x
+        if in_sidebar:
             if event.button == 1:
                 for rect, cb in self._ui_hits:
                     if rect.collidepoint(pos):
@@ -338,60 +353,63 @@ class Editor:
 
         self.filename_focused = False
 
+        # Convert screen-space click to authored space for all canvas operations
+        apos = from_screen(pos)
+
         if event.button == 1:
             if self.mode == MODE_FROG:
                 self._snapshot()
-                self.frog_pos = pos
+                self.frog_pos = apos
                 self._set_mode(MODE_WP)
                 self._set_status("Frog position set.")
             elif self.mode == MODE_COIN:
-                idx = nearest_wp(self.coin_spots, pos, HIT_RADIUS * 1.5)
+                idx = nearest_wp(self.coin_spots, apos, HIT_RADIUS * 1.5)
                 if idx is not None:
                     self._snapshot()
                     self.dragging_coin_idx = idx
                 else:
                     self._snapshot()
-                    self.coin_spots.append(pos)
+                    self.coin_spots.append(apos)
                     self._set_status(f"Coin added ({len(self.coin_spots)} total)", 1.5)
             elif self.mode == MODE_AIM:
-                idx = nearest_wp(self.aim_spots, pos, HIT_RADIUS * 1.5)
+                idx = nearest_wp(self.aim_spots, apos, HIT_RADIUS * 1.5)
                 if idx is not None:
                     self._snapshot()
                     self.dragging_aim_idx = idx
                 else:
                     self._snapshot()
-                    self.aim_spots.append(pos)
+                    self.aim_spots.append(apos)
                     self._set_status(f"Aim powerup added ({len(self.aim_spots)} total)", 1.5)
             elif self.mode == MODE_EXTEND:
                 self._snapshot()
-                self.waypoints.append(pos)
+                self.waypoints.append(apos)
                 self._rebuild_path()
             elif self.mode == MODE_INSERT:
                 self._snapshot()
-                insert_after = nearest_segment(self.waypoints, pos)
-                self.waypoints.insert(insert_after + 1, pos)
+                insert_after = nearest_segment(self.waypoints, apos)
+                self.waypoints.insert(insert_after + 1, apos)
                 self._rebuild_path()
             else:  # MODE_WP — drag only
-                idx = nearest_wp(self.waypoints, pos)
+                idx = nearest_wp(self.waypoints, apos)
                 if idx is not None:
                     self._snapshot()
                     self.dragging_idx = idx
 
         elif event.button == 3:
             if self.mode == MODE_COIN:
-                idx = nearest_wp(self.coin_spots, pos, HIT_RADIUS * 1.5)
+                idx = nearest_wp(self.coin_spots, apos, HIT_RADIUS * 1.5)
                 if idx is not None:
                     self._snapshot()
                     self.coin_spots.pop(idx)
                     self._set_status(f"Coin removed ({len(self.coin_spots)} total)", 1.5)
             elif self.mode == MODE_AIM:
-                idx = nearest_wp(self.aim_spots, pos, HIT_RADIUS * 1.5)
+                idx = nearest_wp(self.aim_spots, apos, HIT_RADIUS * 1.5)
                 if idx is not None:
                     self._snapshot()
                     self.aim_spots.pop(idx)
                     self._set_status(f"Aim powerup removed ({len(self.aim_spots)} total)", 1.5)
             elif self.mode in (MODE_WP, MODE_EXTEND, MODE_INSERT):
-                idx = nearest_wp(self.waypoints, pos)
+                idx = nearest_wp(self.waypoints, apos)
                 if idx is not None:
                     self._snapshot()
                     self.waypoints.pop(idx)
@@ -409,32 +427,23 @@ class Editor:
 
     # ── render ───────────────────────────────────────────────────────────────
 
-    def draw(self, canvas: pygame.Surface, screen: pygame.Surface,
-             canvas_rect: pygame.Rect, logical_mouse: tuple,
-             screen_mouse: tuple) -> None:
-        """Draw the editor.
+    def draw(self, screen: pygame.Surface, mouse: tuple) -> None:
+        """Draw canvas content directly to screen."""
+        # Only clear the canvas area, not the sidebar
+        pygame.draw.rect(screen, BG_COLOR, (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+        self._ui_hits = []
+        self._draw_path(screen)
+        self._draw_coins(screen)
+        self._draw_aim_spots(screen)
+        self._draw_waypoints(screen, mouse)
+        self._draw_frog(screen)
+        self._draw_overlays(screen)
 
-        canvas      — logical 1280×960 surface (scaled & blitted to screen by caller)
-        screen      — the real display surface (sidebar drawn here in screen-space)
-        canvas_rect — where the canvas sits on screen (Rect)
-        logical_mouse  — mouse pos in logical canvas coordinates
-        screen_mouse   — mouse pos in raw screen coordinates
-        """
-        canvas.fill(BG_COLOR)
-        self._ui_hits = []   # reset; rebuilt by _draw_sidebar in screen space
-
-        self._draw_path(canvas)
-        self._draw_coins(canvas)
-        self._draw_aim_spots(canvas)
-        self._draw_waypoints(canvas, logical_mouse)
-        self._draw_frog(canvas)
-        self._draw_overlays(canvas)
-
-        # sidebar lives in screen space (right of the canvas)
-        sidebar_x = canvas_rect.right
-        sidebar_w = screen.get_width() - sidebar_x
-        if sidebar_w > 0:
-            self._draw_sidebar(screen, screen_mouse, sidebar_x, sidebar_w)
+    def draw_sidebar(self, screen: pygame.Surface, screen_mouse: tuple,
+                     sidebar_x: int, sidebar_w: int) -> None:
+        """Draw sidebar at sidebar_x on screen. screen_mouse must be in screen space."""
+        self._sidebar_x = sidebar_x  # used by _on_mouse_down in screen space
+        self._draw_sidebar(screen, screen_mouse, sidebar_x, sidebar_w)
 
     # ── canvas drawing ───────────────────────────────────────────────────────
 
@@ -451,19 +460,21 @@ class Editor:
 
     def _draw_waypoints(self, screen, mouse):
         for i, wp in enumerate(self.waypoints):
+            sp = to_screen(wp)
             if i == self.dragging_idx:
                 col = C["wp_drag"]
-            elif dist(wp, mouse) < HIT_RADIUS:
+            elif dist(sp, mouse) < HIT_RADIUS:
                 col = C["wp_hov"]
             else:
                 col = C["wp"]
-            aa_circle(screen, col, wp, WAYPOINT_R)
+            aa_circle(screen, col, sp, WAYPOINT_R)
             lbl = self.font_sm.render(str(i), True, col)
-            screen.blit(lbl, (wp[0] + WAYPOINT_R + 2, wp[1] - 8))
+            screen.blit(lbl, (sp[0] + WAYPOINT_R + 2, sp[1] - 8))
 
     def _draw_frog(self, screen):
         if self.frog_pos:
-            x, y = int(self.frog_pos[0]), int(self.frog_pos[1])
+            x, y = to_screen(self.frog_pos)
+            x, y = int(x), int(y)
             aa_circle(screen, C["frog"], (x, y), FROG_R)
             aa_circle(screen, BG_COLOR,  (x, y), FROG_R - 4)
             lbl = self.font_sm.render("FROG", True, C["frog"])
@@ -471,7 +482,8 @@ class Editor:
 
     def _draw_coins(self, screen):
         for i, pos in enumerate(self.coin_spots):
-            x, y = int(pos[0]), int(pos[1])
+            x, y = to_screen(pos)
+            x, y = int(x), int(y)
             aa_circle(screen, C["coin"], (x, y), COIN_R)
             aa_circle(screen, BG_COLOR,  (x, y), COIN_R - 4)
             lbl = self.font_sm.render(f"${i}", True, C["coin"])
@@ -479,9 +491,9 @@ class Editor:
 
     def _draw_aim_spots(self, screen):
         for i, pos in enumerate(self.aim_spots):
-            x, y = int(pos[0]), int(pos[1])
+            x, y = to_screen(pos)
+            x, y = int(x), int(y)
             r = AIM_R
-            # crosshair
             pygame.draw.line(screen, C["aim"], (x - r, y), (x + r, y), 1)
             pygame.draw.line(screen, C["aim"], (x, y - r), (x, y + r), 1)
             pygame.gfxdraw.aacircle(screen, x, y, r, C["aim"])
@@ -492,7 +504,6 @@ class Editor:
 
     def _draw_sidebar(self, screen, mouse, px: int, panel_w: int):
         self._panel_w  = panel_w   # used by _hline / _stepper helpers
-        self._sidebar_x = px
         sh = screen.get_height()
         panel = pygame.Surface((panel_w, sh), pygame.SRCALPHA)
         panel.fill((0, 0, 0, 230))
@@ -726,55 +737,53 @@ class Editor:
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-def _canvas_layout(screen):
-    """Return (scale, canvas_rect) so the 1280×960 canvas fills the screen height,
-    left-anchored, with any remaining width available for the sidebar."""
-    _, sh = screen.get_size()
-    scale  = sh / SCREEN_HEIGHT          # fit to height exactly
-    cw     = int(SCREEN_WIDTH  * scale)
-    ch     = int(SCREEN_HEIGHT * scale)
-    return scale, pygame.Rect(0, 0, cw, ch)
-
-def _logical_pos(screen_pos, scale):
-    lx = int(screen_pos[0] / scale)
-    ly = int(screen_pos[1] / scale)
-    return (max(0, min(SCREEN_WIDTH, lx)), max(0, min(SCREEN_HEIGHT, ly)))
-
-def _remap_event(event, scale):
-    if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
-        d = event.__dict__.copy()
-        d["pos"] = _logical_pos(event.pos, scale)
-        return pygame.event.Event(event.type, d)
-    return event
-
 def main():
     pygame.init()
-    screen  = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    sw, sh = screen.get_size()
+    # Scale the 1920x1080 logical canvas to fill the screen exactly.
+    # The sidebar is drawn directly on the screen surface (overlaid on the right edge).
+    scale = sh / SCREEN_HEIGHT
     logical = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("Poplux — Level Editor")
-    clock   = pygame.time.Clock()
+    clock  = pygame.time.Clock()
 
     load_path = sys.argv[1] if len(sys.argv) > 1 else None
     editor    = Editor(load_path)
 
     while True:
         dt = clock.tick(FPS) / 1000.0
-        scale, canvas_rect = _canvas_layout(screen)
 
+        blit_x = -int(_PATH_X_OFFSET * scale)
+        # Remap mouse: account for canvas blit offset
+        sx, sy = pygame.mouse.get_pos()
+        mouse = (int((sx - blit_x) / scale), int(sy / scale))
+
+        sidebar_screen_x = sw - PANEL_W
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            editor.handle_event(_remap_event(event, scale))
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
+                in_sidebar = event.pos[0] >= sidebar_screen_x
+                if not in_sidebar:
+                    d = event.__dict__.copy()
+                    d["pos"] = (int((event.pos[0] - blit_x) / scale), int(event.pos[1] / scale))
+                    event = pygame.event.Event(event.type, d)
+            editor.handle_event(event)
 
         editor.update(dt)
 
-        screen_mouse  = pygame.mouse.get_pos()
-        logical_mouse = _logical_pos(screen_mouse, scale)
-
-        screen.fill((10, 10, 18))
-        editor.draw(logical, screen, canvas_rect, logical_mouse, screen_mouse)
-        screen.blit(pygame.transform.smoothscale(logical, canvas_rect.size), (0, 0))
+        # Scale canvas uniformly by height.
+        # Shift the blit left by the path x-offset (scaled) so content is centered.
+        logical.fill((10, 10, 18))
+        editor.draw(logical, mouse)
+        canvas_sw = int(SCREEN_WIDTH * scale)
+        canvas_sh = int(SCREEN_HEIGHT * scale)
+        blit_x = -int(_PATH_X_OFFSET * scale)
+        screen.blit(pygame.transform.smoothscale(logical, (canvas_sw, canvas_sh)), (blit_x, 0))
+        # Draw sidebar directly on screen (overlaid on right edge, in screen space)
+        editor.draw_sidebar(screen, pygame.mouse.get_pos(), sw - PANEL_W, PANEL_W)
         pygame.display.flip()
 
 
