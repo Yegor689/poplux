@@ -31,8 +31,13 @@ PATH_NUM_POINTS = 500
 
 _levels_dir = os.path.join(os.path.dirname(__file__), "levels")
 
+def _level_sort_key(fname):
+    import re
+    m = re.search(r'(\d+)', fname)
+    return int(m.group(1)) if m else fname
+
 def _read_levels():
-    fnames = sorted(f for f in os.listdir(_levels_dir) if f.endswith(".json"))
+    fnames = sorted((f for f in os.listdir(_levels_dir) if f.endswith(".json")), key=_level_sort_key)
     files  = [os.path.join(_levels_dir, f) for f in fnames]
     data = []
     for fp in files:

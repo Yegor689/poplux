@@ -28,6 +28,8 @@ class Game:
         self.state = "main_menu"
         self._records_scroll = 0
         self._level_select_idx = 0
+        self._ls_scroll = 0
+        self._ls_hover_suppressed = False
         self.current_level_idx = 0
         self.path = None
         self.frog = None
@@ -189,6 +191,17 @@ class Game:
             self.active_cheats.add(code)
             self._cheat_message = f"{code}  [ARMED]" if code == "CLEARALL" else f"{code}  [ON]"
 
+    def _ls_scroll_to(self, idx: int) -> None:
+        """Ensure the selected level row is visible in the list."""
+        row_h   = self.renderer._LS_ROW_H + self.renderer._LS_ROW_GAP
+        list_h  = self.renderer.screen.get_height() - self.renderer._LS_LIST_TOP - 20
+        top     = idx * row_h
+        bottom  = top + self.renderer._LS_ROW_H
+        if top < self._ls_scroll:
+            self._ls_scroll = top
+        elif bottom > self._ls_scroll + list_h:
+            self._ls_scroll = bottom - list_h
+
     def _update_music(self) -> None:
         if self.state in ("level_complete", "game_complete"):
             track = self._music_finish
@@ -270,11 +283,15 @@ class Game:
                         SETTINGS.save()
                     elif action == "sfx_changed":
                         SETTINGS.save()
+            if event.type == pygame.MOUSEMOTION and self.state == "level_select":
+                self._ls_hover_suppressed = False
             if event.type == pygame.MOUSEWHEEL and self.state == "level_select":
                 self._level_select_idx = max(0, min(
                     self._level_select_idx - event.y,
                     len(LEVELS) - 1
                 ))
+                self._ls_scroll_to(self._level_select_idx)
+                self._ls_hover_suppressed = True
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if self.state == "main_menu":
@@ -299,8 +316,12 @@ class Game:
                 if self.state == "level_select":
                     if event.key == pygame.K_DOWN:
                         self._level_select_idx = min(self._level_select_idx + 1, len(LEVELS) - 1)
+                        self._ls_scroll_to(self._level_select_idx)
+                        self._ls_hover_suppressed = True
                     elif event.key == pygame.K_UP:
                         self._level_select_idx = max(0, self._level_select_idx - 1)
+                        self._ls_scroll_to(self._level_select_idx)
+                        self._ls_hover_suppressed = True
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         self._init_game_state(self._level_select_idx)
                 # R and Enter on level_complete (items 2, 3)
@@ -356,7 +377,7 @@ class Game:
                     elif btn == 4:
                         return False
                 elif self.state == "level_select":
-                    action = self.renderer.level_select_interact(mouse_pos, self._level_select_idx)
+                    action = self.renderer.level_select_interact(mouse_pos, self._level_select_idx, self._ls_scroll)
                     if action == "play":
                         sounds.play("menu_click", 0.4)
                         self._init_game_state(self._level_select_idx)
@@ -761,7 +782,8 @@ class Game:
         elif self.state == "cheat_menu":
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
-            self.renderer.draw_level_select(mouse_pos, self._level_select_idx, records_store.best_by_level())
+            _ls_mouse = (-1, -1) if self._ls_hover_suppressed else mouse_pos
+            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll)
         elif self.state == "records":
             self.renderer.draw_records(records_store.top(), self._records_scroll)
         elif self.state == "settings":

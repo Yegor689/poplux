@@ -1,6 +1,6 @@
 {
-    "name": "Level 2",
-    "subtitle": "Serpentine path \u00b7 faster",
+    "name": "The Snake",
+    "subtitle": "Row by row, no shortcuts",
     "waypoints": [
         [80, 120],   [1200, 120],
         [1200, 248], [80, 248],
@@ -16,9 +16,7 @@
     "pre_placed": 15,
     "coin_spots": [
         [320, 184],  [960, 184],
-        [320, 312],  [960, 312],
         [320, 440],  [960, 440],
-        [320, 568],  [960, 568],
         [320, 696],  [960, 696]
     ],
     "aim_powerup_spots": [

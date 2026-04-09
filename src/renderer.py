@@ -662,9 +662,9 @@ class Renderer:
     _LS_PLAY_W     = 340
     _LS_PLAY_H     = 90
 
-    def _ls_row_rects(self) -> list[pygame.Rect]:
+    def _ls_row_rects(self, scroll: int = 0) -> list[pygame.Rect]:
         rects = []
-        y = self._LS_LIST_TOP
+        y = self._LS_LIST_TOP - scroll
         for _ in LEVELS:
             rects.append(pygame.Rect(self._LS_LIST_X, y, self._LS_LIST_W, self._LS_ROW_H))
             y += self._LS_ROW_H + self._LS_ROW_GAP
@@ -676,11 +676,11 @@ class Renderer:
                            SCREEN_HEIGHT - self._LS_PLAY_H - 60,
                            self._LS_PLAY_W, self._LS_PLAY_H)
 
-    def level_select_interact(self, pos, selected_idx: int) -> "int | str | None":
+    def level_select_interact(self, pos, selected_idx: int, scroll: int = 0) -> "int | str | None":
         """Returns level index if a list row clicked, 'play' if play button clicked."""
         if self._ls_play_rect().collidepoint(pos):
             return "play"
-        for i, rect in enumerate(self._ls_row_rects()):
+        for i, rect in enumerate(self._ls_row_rects(scroll)):
             if rect.collidepoint(pos):
                 return i
         return None
@@ -693,7 +693,7 @@ class Renderer:
         return None
 
     def draw_level_select(self, mouse_pos, selected_idx: int = 0,
-                          best_scores: dict | None = None) -> None:
+                          best_scores: dict | None = None, scroll: int = 0) -> None:
         title = self.font_large.render("SELECT LEVEL", True, HUD_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 96)))
 
@@ -702,8 +702,11 @@ class Renderer:
                          (self._LS_DETAIL_X - 30, self._LS_LIST_TOP),
                          (self._LS_DETAIL_X - 30, SCREEN_HEIGHT - 40), 1)
 
-        # --- Left panel: level list ---
-        for i, (rect, cfg) in enumerate(zip(self._ls_row_rects(), LEVELS)):
+        # --- Left panel: level list (clipped so rows don't bleed outside bounds) ---
+        list_clip = pygame.Rect(self._LS_LIST_X, self._LS_LIST_TOP,
+                                self._LS_LIST_W, SCREEN_HEIGHT - self._LS_LIST_TOP - 20)
+        self.screen.set_clip(list_clip)
+        for i, (rect, cfg) in enumerate(zip(self._ls_row_rects(scroll), LEVELS)):
             selected = i == selected_idx
             hovered  = rect.collidepoint(mouse_pos)
             if selected:
@@ -748,6 +751,8 @@ class Renderer:
                     sub_surf = pygame.transform.smoothscale(sub_surf, (max_text_w, sub_surf.get_height()))
                 self.screen.blit(sub_surf, sub_surf.get_rect(
                     midleft=(text_x, rect.centery + name_surf.get_height() // 2 + 1)))
+
+        self.screen.set_clip(None)
 
         # --- Right panel: selected level detail ---
         cfg  = LEVELS[selected_idx]
