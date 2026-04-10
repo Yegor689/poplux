@@ -13,10 +13,9 @@ _CATCH_UP_MULTIPLIER = 10.0
 _GAP_THRESHOLD = BALL_DIAMETER * 1.2
 # Seconds to wait after catch-up closes a gap before the matched balls pop
 _CASCADE_DELAY = 0.5
-# Insertion animation: how many balls ahead animate + decay rate (px/s)
-_ANIM_BALLS  = 5
-_ANIM_RATE   = BALL_DIAMETER / 0.17   # completes in ~0.17 s
+# Insertion animation
 _ENTRY_SPEED = 1.0 / 0.17             # entry animation: 0→1 in ~0.17 s
+_GAP_OPEN_SPEED = BALL_DIAMETER / 0.15  # px/s — how fast the front slides to make room
 
 
 def _random_color(last_two: list[str], pool: list[str]) -> str:
@@ -123,10 +122,20 @@ class Chain:
         for b in self.balls:
             b.path_distance += delta
 
-        # --- Insertion-animation offset decay ---
-        for b in self.balls:
-            if b.path_offset < 0:
-                b.path_offset = min(0.0, b.path_offset + _ANIM_RATE * dt)
+        # --- Gap-opening for inserting balls ---
+        # Push balls ahead in the SAME segment only (stop at first open gap).
+        for i, b in enumerate(self.balls):
+            gap_rem = getattr(b, '_gap_remaining', 0.0)
+            if gap_rem > 0:
+                push = min(gap_rem, _GAP_OPEN_SPEED * dt)
+                b._gap_remaining = gap_rem - push
+                for j in range(i + 1, len(self.balls)):
+                    # Stop at the first open gap — don't push frozen segments
+                    if j > i + 1:
+                        spacing = self.balls[j].path_distance - self.balls[j - 1].path_distance
+                        if spacing > _GAP_THRESHOLD:
+                            break
+                    self.balls[j].path_distance += push
             if b.entry_t < 1.0:
                 b.entry_t = min(1.0, b.entry_t + _ENTRY_SPEED * dt)
 
@@ -231,8 +240,8 @@ class Chain:
     # ------------------------------------------------------------------
 
     def insert(self, ball: Ball, path_dist: float) -> int:
-        """Insert ball near path_dist; snap it snugly to its rear neighbour.
-        All balls ahead of the insertion point shift forward by one diameter.
+        """Insert ball at path_dist.  Balls ahead are NOT shifted instantly;
+        instead advance() will accelerate them to open a gap over a few frames.
         Returns the index of the inserted ball."""
         if not self.balls:
             ball.path_distance = path_dist
@@ -248,59 +257,16 @@ class Chain:
 
         # Place ball snugly — one diameter ahead of the ball behind it
         if idx == 0:
-            # Inserting at the very rear
             ball.path_distance = self.balls[0].path_distance - BALL_DIAMETER
         else:
             ball.path_distance = self.balls[idx - 1].path_distance + BALL_DIAMETER
-
-        # Find the first non-matching open gap at or just before the insertion point;
-        # balls beyond it are frozen and must not be shifted.
-        freeze_at = len(self.balls)
-        for gi in range(max(0, idx - 1), len(self.balls) - 1):
-            gap = self.balls[gi + 1].path_distance - self.balls[gi].path_distance
-            if gap > _GAP_THRESHOLD and self.balls[gi].color != self.balls[gi + 1].color:
-                freeze_at = gi + 1
-                break
-
-        # Shift balls ahead to make room, stopping at the freeze boundary
-        for i in range(idx, freeze_at):
-            self.balls[i].path_distance += BALL_DIAMETER
-
-        # After shifting the rear segment, check both overlap scenarios:
-        #
-        # Case A – inserted inside the rear segment (idx < freeze_at):
-        #   The shift moved every ball between idx and the freeze boundary forward
-        #   by a full diameter. If the gap to the frozen section was smaller than
-        #   2×BALL_DIAMETER, the last shifted ball now overlaps the first frozen
-        #   ball. Pull the entire rear segment (and the new ball) back far enough
-        #   to restore exactly one diameter of clearance.
-        if freeze_at > idx and freeze_at < len(self.balls):
-            gap_to_frozen = self.balls[freeze_at].path_distance - self.balls[freeze_at - 1].path_distance
-            if gap_to_frozen < BALL_DIAMETER:
-                pushback = BALL_DIAMETER - gap_to_frozen
-                ball.path_distance -= pushback
-                for k in range(freeze_at):
-                    self.balls[k].path_distance -= pushback
-
-        # Case B – inserted at or past the freeze boundary (idx >= freeze_at):
-        #   No rear-segment balls were shifted, but the new ball itself might be
-        #   placed too close to the (unshifted) frozen ball directly ahead.
-        elif idx < len(self.balls) and idx >= freeze_at:
-            gap_ahead = self.balls[idx].path_distance - ball.path_distance
-            if gap_ahead < BALL_DIAMETER:
-                pushback = BALL_DIAMETER - gap_ahead
-                ball.path_distance -= pushback
-                for k in range(idx):
-                    self.balls[k].path_distance -= pushback
-
-        # Animate the nearest neighbours sliding out of the way
-        for i in range(idx, min(idx + _ANIM_BALLS, freeze_at)):
-            self.balls[i].path_offset = -BALL_DIAMETER
 
         # Record fired position for the entry animation
         ball.entry_x = ball.x
         ball.entry_y = ball.y
         ball.entry_t = 0.0
+        # How much gap still needs to open ahead (animated in advance())
+        ball._gap_remaining = float(BALL_DIAMETER)
 
         self.balls.insert(idx, ball)
         return idx

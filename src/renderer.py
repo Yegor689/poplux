@@ -23,8 +23,9 @@ class Renderer:
         self.font_icon_lg  = pygame.font.Font(_FONT_SYMBOLS, 72)
         self.font_icon_sm  = pygame.font.Font(_FONT_SYMBOLS, 44)
         # Score popup fonts scaled by cascade level (1=base, 5=largest)
+        # Use Exo2 for full glyph coverage (Orbitron missing some punctuation)
         _popup_sizes = [76, 92, 108, 124, 140]
-        self._popup_fonts = [pygame.font.Font(_FONT_ORBITRON, s) for s in _popup_sizes]
+        self._popup_fonts = [pygame.font.Font(_FONT_EXO2, s) for s in _popup_sizes]
         self._palettes = self._build_palettes()
         # Cached surfaces — allocated once, cleared and reused each frame
         self._aim_line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -294,7 +295,9 @@ class Renderer:
     def draw_score_popups(self, popups: list) -> None:
         for p in popups:
             font = self._popup_fonts[min(p.cascade_level - 1, len(self._popup_fonts) - 1)]
-            surf = font.render(p.text, True, p.color)
+            # antialias=False uses colorkey transparency — no opaque black tofu rects
+            surf = font.render(p.text, False, p.color)
+            surf.set_colorkey((0, 0, 0))
             surf.set_alpha(p.alpha)
             self.screen.blit(surf, surf.get_rect(center=(int(p.x), int(p.y))))
 
