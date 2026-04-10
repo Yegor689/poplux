@@ -30,6 +30,7 @@ class Game:
         self._level_select_idx = 0
         self._ls_scroll = 0
         self._ls_hover_suppressed = False
+        self._all_unlocked: bool = False  # F9 in level_select: unlock all levels
         self.current_level_idx = 0
         self.path = None
         self.frog = None
@@ -246,6 +247,12 @@ class Game:
         pygame.quit()
         sys.exit()
 
+    def _max_unlocked(self) -> int:
+        """Highest level index the player can access this session."""
+        if self._all_unlocked:
+            return len(LEVELS) - 1
+        return records_store.max_unlocked(LEVELS)
+
     def _scale_rect(self) -> tuple:
         """Return (scale, offset_x, offset_y, scaled_w, scaled_h) preserving aspect ratio."""
         size = self.screen.get_size()
@@ -327,7 +334,8 @@ class Game:
                         self._ls_scroll_to(self._level_select_idx)
                         self._ls_hover_suppressed = True
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                        self._init_game_state(self._level_select_idx)
+                        if self._level_select_idx <= self._max_unlocked():
+                            self._init_game_state(self._level_select_idx)
                 # R and Enter on level_complete (items 2, 3)
                 if self.state == "level_complete":
                     if event.key == pygame.K_r:
@@ -350,6 +358,8 @@ class Game:
                     self._init_combo_test()
                 elif event.key == pygame.K_s and self.state == "main_menu":
                     self.state = "cheat_menu"
+                elif event.key == pygame.K_F9 and self.state == "level_select":
+                    self._all_unlocked = not self._all_unlocked
                 elif event.key == pygame.K_F9 and self.state in ("playing", "combo_test"):
                     self.state = "game_complete"
                 elif self.state == "cheat_menu":
@@ -382,10 +392,11 @@ class Game:
                         return False
                 elif self.state == "level_select":
                     action = self.renderer.level_select_interact(mouse_pos, self._level_select_idx, self._ls_scroll)
-                    if action == "play":
+                    _locked = self._level_select_idx > self._max_unlocked()
+                    if action == "play" and not _locked:
                         sounds.play("menu_click", 0.4)
                         self._init_game_state(self._level_select_idx)
-                    elif action == "endless":
+                    elif action == "endless" and not _locked:
                         sounds.play("menu_click", 0.4)
                         self._init_endless_mode(self._level_select_idx)
                     elif isinstance(action, int):
@@ -394,6 +405,9 @@ class Game:
                 elif self.state in ("playing", "combo_test"):
                     ball = self.frog.shoot()
                     sounds.play("shoot", 0.35)
+                    if self._aim_timer > 0:
+                        ball.dx *= 2.0   # aim powerup: 2× shoot speed
+                        ball.dy *= 2.0
                     if "FASTBALL" in self.active_cheats:
                         ball.dx *= 3.0
                         ball.dy *= 3.0
@@ -473,8 +487,8 @@ class Game:
         cy = sum(p[1] for p in positions) / len(positions)
         cascade_level = self.chain.recent_pops[0][2]
         n_balls = len(self.chain.recent_pops)
-        total = n_balls * cascade_level * 10
-        text = f"+{total:,}" if cascade_level == 1 else f"+{n_balls * 10:,}  x{cascade_level}"
+        total = n_balls * cascade_level * 5
+        text = f"+{total:,}" if cascade_level == 1 else f"+{n_balls * 5:,}  x{cascade_level}"
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
         if cascade_level > 1:
             sounds.play_cascade(cascade_level, 0.5)
@@ -485,7 +499,7 @@ class Game:
 
         for (_, color_name, cascade_level), (pcx, pcy) in zip(
                 self.chain.recent_pops, positions):
-            self.score += cascade_level * 10  # 10 pts × combo multiplier per ball popped
+            self.score += cascade_level * 5  # 5 pts × combo multiplier per ball popped
             base = BALL_COLORS.get(color_name, (200, 200, 200))
             light = tuple(min(255, c + 60) for c in base)
             for _ in range(self._PARTICLE_COUNT):
@@ -716,7 +730,7 @@ class Game:
             if math.hypot(bx - hx, by - hy) <= self._BOMB_RADIUS:
                 indices.append(i)
                 positions.append((bx, by))
-                self.score += 50
+                self.score += 25
                 base = BALL_COLORS.get(b.color, (200, 200, 200))
                 light = tuple(min(255, c + 60) for c in base)
                 for _ in range(self._PARTICLE_COUNT):
@@ -734,7 +748,7 @@ class Game:
         if positions:
             cx = sum(p[0] for p in positions) / len(positions)
             cy = sum(p[1] for p in positions) / len(positions)
-            total = len(indices) * 50
+            total = len(indices) * 25
             self.score_popups.append(
                 ScorePopup(cx, cy, f"BOOM +{total}", (255, 140, 0), 1.4, 1.4)
             )
@@ -752,10 +766,10 @@ class Game:
                     continue
                 dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
                 if dist_sq <= (ball.radius + coin.radius) ** 2:
-                    self.score += 100
+                    self.score += 50
                     sounds.play("coin", 0.4)
                     self.score_popups.append(
-                        ScorePopup(coin.x, coin.y, "+100", (255, 215, 0), 1.1, 1.1)
+                        ScorePopup(coin.x, coin.y, "+50", (255, 215, 0), 1.1, 1.1)
                     )
                     coins_hit.append(coin)
                     balls_used.append(ball)
@@ -796,7 +810,7 @@ class Game:
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
             _ls_mouse = (-1, -1) if self._ls_hover_suppressed else mouse_pos
-            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll)
+            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll, self._max_unlocked(), self._all_unlocked)
         elif self.state == "records":
             self.renderer.draw_records(records_store.top(), self._records_scroll)
         elif self.state == "settings":
@@ -810,7 +824,7 @@ class Game:
                 self.renderer.draw_particles(self.particles)
             self.renderer.draw_score_popups(self.score_popups)
             self.renderer.draw_fired_balls(self.fired_balls)
-            self.renderer.draw_aim_line(self.frog, self._aim_timer)
+            self.renderer.draw_aim_line(self.frog, self._aim_timer, self._frame_chain_positions)
             self.renderer.draw_frog(self.frog)
             _front = self.chain.front_distance() if self.chain.balls else 0.0
             _path_len = self.path.total_length if self.path else 1.0

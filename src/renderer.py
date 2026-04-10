@@ -171,65 +171,90 @@ class Renderer:
         for p in powerups:
             cx, cy = int(p.x), int(p.y)
             alpha = p.alpha
-            r = p.radius + int(math.sin(p.pulse) * 2)
-            size = (r + 10) * 2
+            r = p.radius + int(math.sin(p.pulse) * 3)
+            glow = 20
+            size = (r + glow) * 2
             surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            sc = r + 10
-            # Outer glow rings
-            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 8, (0, 220, 255, alpha // 6))
-            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 5, (0, 220, 255, alpha // 3))
+            sc = r + glow
+            # Wide soft glow
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + glow - 2, (0, 220, 255, alpha // 8))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 12,       (0, 220, 255, alpha // 5))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 6,        (0, 220, 255, alpha // 3))
             # Dark fill with cyan border
             pygame.gfxdraw.filled_circle(surf, sc, sc, r, (8, 18, 38, alpha))
-            pygame.gfxdraw.aacircle(surf, sc, sc, r, (0, 220, 255, alpha))
+            pygame.gfxdraw.aacircle(surf, sc, sc, r,     (0, 220, 255, alpha))
             pygame.gfxdraw.aacircle(surf, sc, sc, r - 2, (0, 180, 220, alpha // 2))
-            # Crosshair lines (broken at centre)
+            # Crosshair lines (broken at centre), thicker
             gap = r // 3
             lc = (0, 230, 255, alpha)
-            pygame.draw.line(surf, lc, (sc - r + 3, sc), (sc - gap, sc), 1)
-            pygame.draw.line(surf, lc, (sc + gap, sc), (sc + r - 3, sc), 1)
-            pygame.draw.line(surf, lc, (sc, sc - r + 3), (sc, sc - gap), 1)
-            pygame.draw.line(surf, lc, (sc, sc + gap), (sc, sc + r - 3), 1)
+            pygame.draw.line(surf, lc, (sc - r + 3, sc), (sc - gap, sc), 2)
+            pygame.draw.line(surf, lc, (sc + gap, sc), (sc + r - 3, sc), 2)
+            pygame.draw.line(surf, lc, (sc, sc - r + 3), (sc, sc - gap), 2)
+            pygame.draw.line(surf, lc, (sc, sc + gap), (sc, sc + r - 3), 2)
             # Centre dot
-            pygame.gfxdraw.filled_circle(surf, sc, sc, 2, (0, 255, 255, alpha))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, 4, (0, 255, 255, alpha))
             self.screen.blit(surf, (cx - sc, cy - sc))
 
-    def draw_aim_line(self, frog, aim_timer: float) -> None:
+    def draw_aim_line(self, frog, aim_timer: float, chain_positions: list = []) -> None:
         if aim_timer <= 0:
             return
-        base_alpha = int(200 * min(aim_timer / 2.0, 1.0))  # fade in over 2 s
+        base_alpha = int(220 * min(aim_timer / 2.0, 1.0))  # fade in over 2 s
         mouth_dist = BALL_RADIUS * 4
         sx = frog.x + math.cos(frog.angle) * mouth_dist
         sy = frog.y + math.sin(frog.angle) * mouth_dist
-        dx = math.cos(frog.angle)
-        dy = math.sin(frog.angle)
+        adx = math.cos(frog.angle)
+        ady = math.sin(frog.angle)
+
+        # Compute proximity factor: how close the frog is to the chain
+        # Closer chain = brighter, thicker, more opaque line
+        if chain_positions:
+            fx, fy = frog.x, frog.y
+            min_dist_sq = min((fx - cx) ** 2 + (fy - cy) ** 2 for cx, cy in chain_positions)
+            min_dist = min_dist_sq ** 0.5
+            # Fully bright within 200px, fades to 30% at 700px+
+            prox = max(0.3, 1.0 - (min_dist - 200) / 500)
+        else:
+            prox = 0.5
+
         # Animate dots scrolling toward the target
         phase = (pygame.time.get_ticks() / 120) % 22
         line_surf = self._aim_line_surf
         line_surf.fill((0, 0, 0, 0))
+        dot_r = max(2, int(3 + prox * 3))   # 2–6 px radius based on proximity
         t = phase
         while True:
-            x = sx + dx * t
-            y = sy + dy * t
+            x = sx + adx * t
+            y = sy + ady * t
             if not (0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT):
                 break
-            fade = max(0.25, 1.0 - t / 700)
+            # Distance fade along the line, boosted by proximity
+            fade = max(0.2, prox * (1.0 - t / 800))
             dot_alpha = int(base_alpha * fade)
-            pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), 3, (255, 255, 255, dot_alpha))
+            if dot_alpha > 5:
+                pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), dot_r,
+                                             (120, 220, 255, dot_alpha))
+                # Bright core
+                pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), max(1, dot_r - 2),
+                                             (255, 255, 255, min(255, dot_alpha + 60)))
             t += 22
         self.screen.blit(line_surf, (0, 0))
 
     def draw_coins(self, coins: list) -> None:
         for coin in coins:
             cx, cy = int(coin.x), int(coin.y)
-            r = max(8, int(coin.radius + math.sin(coin.pulse) * 2))
+            r = max(8, int(coin.radius + math.sin(coin.pulse) * 3))
             alpha = coin.alpha
-            size = (r + 6) * 2
+            glow = 18
+            size = (r + glow) * 2
             surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            sc = r + 6
-            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 4, (255, 215, 0, alpha // 4))
-            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 2, (255, 215, 0, alpha // 2))
-            pygame.gfxdraw.filled_circle(surf, sc, sc, r, (255, 215, 0, alpha))
-            pygame.gfxdraw.aacircle(surf, sc, sc, r, (180, 140, 0, alpha))
+            sc = r + glow
+            # Wide soft glow
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + glow - 2, (255, 200, 0, alpha // 8))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 10,       (255, 215, 0, alpha // 5))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r + 5,        (255, 215, 0, alpha // 3))
+            pygame.gfxdraw.filled_circle(surf, sc, sc, r,            (255, 215, 0, alpha))
+            pygame.gfxdraw.aacircle(surf, sc, sc, r,                 (180, 140, 0, alpha))
+            # Highlight
             pygame.gfxdraw.filled_circle(surf, sc - r // 4, sc - r // 4, r // 3,
                                          (255, 245, 140, alpha))
             self.screen.blit(surf, (cx - sc, cy - sc))
@@ -708,7 +733,8 @@ class Renderer:
         return None
 
     def draw_level_select(self, mouse_pos, selected_idx: int = 0,
-                          best_scores: dict | None = None, scroll: int = 0) -> None:
+                          best_scores: dict | None = None, scroll: int = 0,
+                          max_unlocked: int = 0, all_unlocked: bool = False) -> None:
         title = self.font_large.render("SELECT LEVEL", True, HUD_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 96)))
 
@@ -717,14 +743,19 @@ class Renderer:
                          (self._LS_DETAIL_X - 30, self._LS_LIST_TOP),
                          (self._LS_DETAIL_X - 30, SCREEN_HEIGHT - 40), 1)
 
-        # --- Left panel: level list (clipped so rows don't bleed outside bounds) ---
+        # --- Left panel: level list ---
         list_clip = pygame.Rect(self._LS_LIST_X, self._LS_LIST_TOP,
                                 self._LS_LIST_W, SCREEN_HEIGHT - self._LS_LIST_TOP - 20)
         self.screen.set_clip(list_clip)
         for i, (rect, cfg) in enumerate(zip(self._ls_row_rects(scroll), LEVELS)):
+            locked   = i > max_unlocked
             selected = i == selected_idx
-            hovered  = rect.collidepoint(mouse_pos)
-            if selected:
+            hovered  = rect.collidepoint(mouse_pos) and not locked
+
+            if locked:
+                fill   = (22, 22, 30)
+                border = (40, 40, 55)
+            elif selected:
                 fill   = (50, 60, 90)
                 border = (140, 160, 255)
             elif hovered:
@@ -738,49 +769,54 @@ class Renderer:
             pygame.draw.rect(self.screen, border, rect, 2, border_radius=8)
 
             # Level number badge
-            num_surf = self.font_med.render(f"{i + 1:02d}", True,
-                                            (140, 160, 255) if selected else (80, 80, 110))
-            self.screen.blit(num_surf, num_surf.get_rect(
-                midleft=(rect.x + 16, rect.centery)))
+            num_col = (60, 60, 80) if locked else ((140, 160, 255) if selected else (80, 80, 110))
+            num_surf = self.font_med.render(f"{i + 1:02d}", True, num_col)
+            self.screen.blit(num_surf, num_surf.get_rect(midleft=(rect.x + 16, rect.centery)))
 
-            # Best score on the right — compute width first to know safe text boundary
-            best = (best_scores or {}).get(cfg["name"])
-            score_x = rect.right - 16
-            if best:
-                sc_surf = self.font_small.render(f"{best['score']:,}", True, (220, 190, 50))
-                self.screen.blit(sc_surf, sc_surf.get_rect(midright=(score_x, rect.centery)))
-                score_x = rect.right - sc_surf.get_width() - 24
+            if locked:
+                # Lock icon + "LOCKED" text
+                lock_surf = self.font_small.render("LOCKED", True, (55, 55, 70))
+                self.screen.blit(lock_surf, lock_surf.get_rect(midleft=(rect.x + 90, rect.centery)))
+            else:
+                # Best score on the right
+                best = (best_scores or {}).get(cfg["name"])
+                score_x = rect.right - 16
+                if best:
+                    sc_surf = self.font_small.render(f"{best['score']:,}", True, (220, 190, 50))
+                    self.screen.blit(sc_surf, sc_surf.get_rect(midright=(score_x, rect.centery)))
+                    score_x = rect.right - sc_surf.get_width() - 24
 
-            # Name + subtitle, clipped to not overlap score
-            text_right = score_x - 12
-            text_x = rect.x + 90
-            max_text_w = text_right - text_x
+                text_right = score_x - 12
+                text_x = rect.x + 90
+                max_text_w = text_right - text_x
 
-            name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
-            self.screen.blit(name_surf, name_surf.get_rect(
-                midleft=(text_x, rect.centery - name_surf.get_height() // 2 - 1)))
-            sub = cfg.get("subtitle", "")
-            if sub:
-                sub_surf = self.font_small.render(sub, True, (130, 130, 150))
-                if sub_surf.get_width() > max_text_w:
-                    sub_surf = pygame.transform.smoothscale(sub_surf, (max_text_w, sub_surf.get_height()))
-                self.screen.blit(sub_surf, sub_surf.get_rect(
-                    midleft=(text_x, rect.centery + name_surf.get_height() // 2 + 1)))
+                name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
+                self.screen.blit(name_surf, name_surf.get_rect(
+                    midleft=(text_x, rect.centery - name_surf.get_height() // 2 - 1)))
+                sub = cfg.get("subtitle", "")
+                if sub:
+                    sub_surf = self.font_small.render(sub, True, (130, 130, 150))
+                    if sub_surf.get_width() > max_text_w:
+                        sub_surf = pygame.transform.smoothscale(sub_surf, (max_text_w, sub_surf.get_height()))
+                    self.screen.blit(sub_surf, sub_surf.get_rect(
+                        midleft=(text_x, rect.centery + name_surf.get_height() // 2 + 1)))
 
         self.screen.set_clip(None)
 
         # --- Right panel: selected level detail ---
-        cfg  = LEVELS[selected_idx]
-        best = (best_scores or {}).get(cfg["name"])
-        dx   = self._LS_DETAIL_X
-        dw   = self._LS_DETAIL_W
-        dcx  = dx + dw // 2
+        cfg    = LEVELS[selected_idx]
+        locked = selected_idx > max_unlocked
+        best   = (best_scores or {}).get(cfg["name"])
+        dx     = self._LS_DETAIL_X
+        dw     = self._LS_DETAIL_W
+        dcx    = dx + dw // 2
 
-        name_surf = self.font_large.render(cfg["name"], True, HUD_COLOR)
+        name_col  = (90, 90, 110) if locked else HUD_COLOR
+        name_surf = self.font_large.render(cfg["name"], True, name_col)
         self.screen.blit(name_surf, name_surf.get_rect(center=(dcx, 220)))
 
         sub = cfg.get("subtitle", "")
-        if sub:
+        if sub and not locked:
             sub_surf = self.font_med.render(sub, True, (160, 160, 180))
             max_w = dw - 40
             if sub_surf.get_width() > max_w:
@@ -789,57 +825,63 @@ class Renderer:
 
         pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, 340), (dx + dw - 20, 340), 1)
 
-        # Stats block
-        stats = [
-            ("BALLS",  f"{cfg['total_balls']}",        (160, 200, 160)),
-            ("SPEED",  f"{int(cfg['chain_speed'])} px/s", (180, 150, 210)),
-        ]
-        sy = 380
-        for label, value, col in stats:
-            lbl = self.font_small.render(label, True, (100, 100, 120))
-            val = self.font_med.render(value, True, col)
-            self.screen.blit(lbl, lbl.get_rect(center=(dcx, sy)))
-            self.screen.blit(val, val.get_rect(center=(dcx, sy + lbl.get_height() + 4)))
-            sy += lbl.get_height() + val.get_height() + 24
-
-        pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, sy), (dx + dw - 20, sy), 1)
-        sy += 20
-
-        # Best record
-        if best:
-            mins, secs = divmod(int(best["time"]), 60)
-            rec_label = self.font_small.render("BEST RUN", True, (100, 100, 120))
-            rec_score = self.font_med.render(f"{best['score']:,}", True, (255, 215, 50))
-            rec_time  = self.font_small.render(f"{mins}:{secs:02d}", True, (180, 200, 180))
-            self.screen.blit(rec_label, rec_label.get_rect(center=(dcx, sy)))
-            self.screen.blit(rec_score, rec_score.get_rect(center=(dcx, sy + rec_label.get_height() + 4)))
-            self.screen.blit(rec_time,  rec_time.get_rect(center=(dcx, sy + rec_label.get_height() + rec_score.get_height() + 8)))
+        if locked:
+            lock_big = self.font_large.render("LOCKED", True, (60, 60, 80))
+            self.screen.blit(lock_big, lock_big.get_rect(center=(dcx, 500)))
+            hint2 = self.font_small.render("Complete the previous level to unlock", True, (70, 70, 90))
+            self.screen.blit(hint2, hint2.get_rect(center=(dcx, 580)))
         else:
-            no_surf = self.font_small.render("No record yet", True, (80, 80, 100))
-            self.screen.blit(no_surf, no_surf.get_rect(center=(dcx, sy + 20)))
+            stats = [
+                ("BALLS",  f"{cfg['total_balls']}",           (160, 200, 160)),
+                ("SPEED",  f"{int(cfg['chain_speed'])} px/s", (180, 150, 210)),
+            ]
+            sy = 380
+            for label, value, col in stats:
+                lbl = self.font_small.render(label, True, (100, 100, 120))
+                val = self.font_med.render(value, True, col)
+                self.screen.blit(lbl, lbl.get_rect(center=(dcx, sy)))
+                self.screen.blit(val, val.get_rect(center=(dcx, sy + lbl.get_height() + 4)))
+                sy += lbl.get_height() + val.get_height() + 24
 
-        # Play button
-        play_rect = self._ls_play_rect()
-        hovered   = play_rect.collidepoint(mouse_pos)
-        pygame.draw.rect(self.screen, (40, 110, 40) if hovered else (25, 75, 25),
-                         play_rect, border_radius=10)
-        pygame.draw.rect(self.screen, (100, 230, 100) if hovered else (60, 170, 60),
-                         play_rect, 2, border_radius=10)
-        play_txt = self.font_med.render("PLAY", True, HUD_COLOR)
-        self.screen.blit(play_txt, play_txt.get_rect(center=play_rect.center))
+            pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, sy), (dx + dw - 20, sy), 1)
+            sy += 20
 
-        # Endless button
-        end_rect = self._ls_endless_rect()
-        end_hov  = end_rect.collidepoint(mouse_pos)
-        pygame.draw.rect(self.screen, (80, 40, 110) if end_hov else (50, 25, 75),
-                         end_rect, border_radius=10)
-        pygame.draw.rect(self.screen, (200, 100, 255) if end_hov else (130, 60, 180),
-                         end_rect, 2, border_radius=10)
-        end_txt = self.font_med.render("ENDLESS", True, HUD_COLOR)
-        self.screen.blit(end_txt, end_txt.get_rect(center=end_rect.center))
+            if best:
+                mins, secs = divmod(int(best["time"]), 60)
+                rec_label = self.font_small.render("BEST RUN", True, (100, 100, 120))
+                rec_score = self.font_med.render(f"{best['score']:,}", True, (255, 215, 50))
+                rec_time  = self.font_small.render(f"{mins}:{secs:02d}", True, (180, 200, 180))
+                self.screen.blit(rec_label, rec_label.get_rect(center=(dcx, sy)))
+                self.screen.blit(rec_score, rec_score.get_rect(center=(dcx, sy + rec_label.get_height() + 4)))
+                self.screen.blit(rec_time,  rec_time.get_rect(center=(dcx, sy + rec_label.get_height() + rec_score.get_height() + 8)))
+            else:
+                no_surf = self.font_small.render("No record yet", True, (80, 80, 100))
+                self.screen.blit(no_surf, no_surf.get_rect(center=(dcx, sy + 20)))
 
-        hint = self.font_small.render("up/down or click to select  ·  Enter to play  ·  ESC back  ·  click ENDLESS for infinite mode",
-                                      True, (90, 90, 100))
+            # Play button
+            play_rect = self._ls_play_rect()
+            hovered   = play_rect.collidepoint(mouse_pos)
+            pygame.draw.rect(self.screen, (40, 110, 40) if hovered else (25, 75, 25),
+                             play_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (100, 230, 100) if hovered else (60, 170, 60),
+                             play_rect, 2, border_radius=10)
+            play_txt = self.font_med.render("PLAY", True, HUD_COLOR)
+            self.screen.blit(play_txt, play_txt.get_rect(center=play_rect.center))
+
+            # Endless button
+            end_rect = self._ls_endless_rect()
+            end_hov  = end_rect.collidepoint(mouse_pos)
+            pygame.draw.rect(self.screen, (80, 40, 110) if end_hov else (50, 25, 75),
+                             end_rect, border_radius=10)
+            pygame.draw.rect(self.screen, (200, 100, 255) if end_hov else (130, 60, 180),
+                             end_rect, 2, border_radius=10)
+            end_txt = self.font_med.render("ENDLESS", True, HUD_COLOR)
+            self.screen.blit(end_txt, end_txt.get_rect(center=end_rect.center))
+
+        dbg = "  ·  F9: unlock all [ON]" if all_unlocked else "  ·  F9: unlock all"
+        hint = self.font_small.render(
+            f"up/down or click to select  ·  Enter to play  ·  ESC back{dbg}",
+            True, (90, 90, 100))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #

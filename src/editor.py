@@ -96,8 +96,13 @@ def aa_circle(surf, color, pos, r):
     pygame.gfxdraw.filled_circle(surf, x, y, r, color)
     pygame.gfxdraw.aacircle(surf, x, y, r, color)
 
+def _level_sort_key(fname):
+    import re
+    m = re.search(r'(\d+)', fname)
+    return int(m.group(1)) if m else fname
+
 def level_files():
-    return sorted(f for f in os.listdir(LEVELS_DIR) if f.endswith(".json"))
+    return sorted((f for f in os.listdir(LEVELS_DIR) if f.endswith(".json")), key=_level_sort_key)
 
 # ── tiny widget helpers ───────────────────────────────────────────────────────
 
@@ -152,7 +157,7 @@ class Editor:
 
         self._ui_hits: list[tuple] = []
         self._panel_w: int = PANEL_W
-        self._sidebar_x: int = SCREEN_WIDTH  # canvas ends here; sidebar starts
+        self._sidebar_x: int = SCREEN_WIDTH  # updated each frame by draw_sidebar
 
         self.font    = pygame.font.SysFont(None, 26)
         self.font_sm = pygame.font.SysFont(None, 21)
@@ -254,11 +259,11 @@ class Editor:
 
     # ── input ────────────────────────────────────────────────────────────────
 
-    def handle_event(self, event):
+    def handle_event(self, event, is_sidebar=False):
         if event.type == pygame.KEYDOWN:
             self._on_key(event)
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            self._on_mouse_down(event)
+            self._on_mouse_down(event, is_sidebar)
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
                 self.dragging_idx = None
@@ -332,17 +337,10 @@ class Editor:
         }
         self._set_status(labels[mode], 3.0)
 
-    def _on_mouse_down(self, event):
+    def _on_mouse_down(self, event, is_sidebar=False):
         pos = event.pos
 
-        # Sidebar events arrive in screen-space; canvas events in logical-space.
-        # A click in the sidebar has pos[0] >= _sidebar_x (screen coords).
-        # A click on the canvas has pos[0] < SCREEN_WIDTH (logical coords, 0-1280).
-        # We distinguish them: if _sidebar_x is stored (screen-space) and pos came
-        # from the sidebar path, pos[0] will be >= _sidebar_x. Canvas logical coords
-        # are always < SCREEN_WIDTH (1280), while _sidebar_x > SCREEN_WIDTH when scaled.
-        in_sidebar = pos[0] >= self._sidebar_x
-        if in_sidebar:
+        if is_sidebar:
             if event.button == 1:
                 for rect, cb in self._ui_hits:
                     if rect.collidepoint(pos):
@@ -442,7 +440,7 @@ class Editor:
     def draw_sidebar(self, screen: pygame.Surface, screen_mouse: tuple,
                      sidebar_x: int, sidebar_w: int) -> None:
         """Draw sidebar at sidebar_x on screen. screen_mouse must be in screen space."""
-        self._sidebar_x = sidebar_x  # used by _on_mouse_down in screen space
+        self._sidebar_screen_x = sidebar_x  # screen-space boundary for click routing
         self._draw_sidebar(screen, screen_mouse, sidebar_x, sidebar_w)
 
     # ── canvas drawing ───────────────────────────────────────────────────────
@@ -764,13 +762,14 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            in_sidebar = False
             if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION):
                 in_sidebar = event.pos[0] >= sidebar_screen_x
                 if not in_sidebar:
                     d = event.__dict__.copy()
                     d["pos"] = (int((event.pos[0] - blit_x) / scale), int(event.pos[1] / scale))
                     event = pygame.event.Event(event.type, d)
-            editor.handle_event(event)
+            editor.handle_event(event, is_sidebar=in_sidebar)
 
         editor.update(dt)
 

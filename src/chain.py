@@ -129,74 +129,107 @@ class Chain:
             if gap_rem > 0:
                 push = min(gap_rem, _GAP_OPEN_SPEED * dt)
                 b._gap_remaining = gap_rem - push
-                for j in range(i + 1, len(self.balls)):
-                    # Stop at the first open gap — don't push frozen segments
-                    if j > i + 1:
-                        spacing = self.balls[j].path_distance - self.balls[j - 1].path_distance
-                        if spacing > _GAP_THRESHOLD:
-                            break
-                    self.balls[j].path_distance += push
+                # Only push if no other inserter ahead in the same segment
+                has_gap_ahead = False
+                for k in range(i + 1, len(self.balls)):
+                    if self.balls[k].path_distance - self.balls[k - 1].path_distance > _GAP_THRESHOLD:
+                        break
+                    if getattr(self.balls[k], '_gap_remaining', 0.0) > 0:
+                        has_gap_ahead = True
+                        break
+                if not has_gap_ahead:
+                    for j in range(i + 1, len(self.balls)):
+                        if j > i + 1:
+                            if self.balls[j].path_distance - self.balls[j - 1].path_distance > _GAP_THRESHOLD:
+                                break
+                        self.balls[j].path_distance += push
             if b.entry_t < 1.0:
                 b.entry_t = min(1.0, b.entry_t + _ENTRY_SPEED * dt)
 
-        # --- Catch-up (matching) / freeze (non-matching) ---
-        # Two-pass approach so freeze always wins over catch-up for the same
-        # gap boundary, while still letting matching gaps that are wholly
-        # inside a frozen segment close normally.
-        #
-        # Pass 1 – freeze: for each non-matching open gap, subtract delta from
-        #   every ball ahead so their net movement is zero.  Also record the
-        #   *nearest* (rightmost) non-matching gap that froze each ball; later
-        #   non-matching gaps overwrite earlier ones for balls they also cover.
-        # Pass 2 – catch-up: for each matching open gap at index i, subtract
-        #   catch_up_extra from balls ahead UNLESS the nearest freeze source
-        #   for that ball is at index >= i, meaning a non-matching gap sits
-        #   between the matching gap and the ball (freeze wins).  When the
-        #   nearest freeze source is *behind* the matching gap (< i), the
-        #   matching gap is inside the frozen segment and catch-up applies.
-        catch_up_extra = self.speed * (_CATCH_UP_MULTIPLIER - 1.0) * dt
-        frozen: set[int] = set()
-        frozen_by: dict[int, int] = {}   # ball index → nearest non-matching gap index
-        for i, gap in enumerate(prev_gaps):
-            if gap > _GAP_THRESHOLD and self.balls[i].color != self.balls[i + 1].color:
-                for j in range(i + 1, len(self.balls)):
-                    if j not in frozen:
-                        self.balls[j].path_distance -= delta
-                        frozen.add(j)
-                    frozen_by[j] = i   # always overwrite → tracks nearest freeze source
+        # --- Recompute gaps after gap-opening so freeze/catch-up uses current state ---
+        cur_gaps = [
+            self.balls[i + 1].path_distance - self.balls[i].path_distance
+            for i in range(len(self.balls) - 1)
+        ]
 
-        for i, gap in enumerate(prev_gaps):
-            if gap > _GAP_THRESHOLD and self.balls[i].color == self.balls[i + 1].color:
-                for j in range(i + 1, len(self.balls)):
-                    nearest = frozen_by.get(j)
-                    if nearest is None or nearest < i:
-                        self.balls[j].path_distance -= catch_up_extra
+        # --- Identify open gaps (skip insertion gaps) ---
+        open_gaps: list[tuple[int, bool]] = []  # (index, colors_match)
+        for i, gap in enumerate(cur_gaps):
+            if getattr(self.balls[i], '_gap_remaining', 0.0) > 0:
+                continue
+            if gap > _GAP_THRESHOLD:
+                match = self.balls[i].color == self.balls[i + 1].color
+                open_gaps.append((i, match))
+
+        # --- Freeze (non-matching) and catch-up (matching) ---
+        # Each gap only affects balls up to the NEXT open gap (segment-local).
+        catch_up_extra = self.speed * (_CATCH_UP_MULTIPLIER - 1.0) * dt
+
+        for gi, (gap_idx, colors_match) in enumerate(open_gaps):
+            # Find the end of this segment: the next open gap, or end of chain
+            next_boundary = len(self.balls)
+            for gi2 in range(gi + 1, len(open_gaps)):
+                next_boundary = open_gaps[gi2][0] + 1
+                break
+
+            if not colors_match:
+                # Freeze: undo the normal advance for balls in this segment
+                for j in range(gap_idx + 1, next_boundary):
+                    self.balls[j].path_distance -= delta
+            else:
+                # Catch-up: pull this segment backward to close the gap
+                for j in range(gap_idx + 1, next_boundary):
+                    self.balls[j].path_distance -= catch_up_extra
 
         # --- Detect newly closed gaps ---
         if self._cascade_pending:
             return  # don't queue another cascade while one is in flight
 
         for i in range(len(self.balls) - 1):
+            if getattr(self.balls[i], '_gap_remaining', 0.0) > 0:
+                continue
             was_open = i < len(prev_gaps) and prev_gaps[i] > _GAP_THRESHOLD
             if not was_open:
                 continue
             gap_now = self.balls[i + 1].path_distance - self.balls[i].path_distance
             if gap_now <= _GAP_THRESHOLD:
                 if self.balls[i].color != self.balls[i + 1].color:
-                    # Non-matching join: rear caught up to frozen front.
-                    # Snap the rear ball (and the whole rear segment) forward so
-                    # the front segment never jumps; chain is now one piece again.
+                    # Non-matching join: snap ball i behind ball i+1, shift rear
+                    # segment only (stop at previous open gap going backward).
+                    # First find the rear-segment boundary using pre-shift gaps.
+                    seg_start = 0
+                    for k in range(i - 1, -1, -1):
+                        orig_gap = self.balls[k + 1].path_distance - self.balls[k].path_distance
+                        if orig_gap > _GAP_THRESHOLD:
+                            seg_start = k + 1
+                            break
                     old_pos = self.balls[i].path_distance
                     self.balls[i].path_distance = self.balls[i + 1].path_distance - BALL_DIAMETER
                     snap_amount = self.balls[i].path_distance - old_pos
-                    for k in range(i):
+                    for k in range(seg_start, i):
                         self.balls[k].path_distance += snap_amount
+                    # Re-pack rear segment (descending from i)
+                    for k in range(i - 1, seg_start - 1, -1):
+                        expected = self.balls[k + 1].path_distance - BALL_DIAMETER
+                        if abs(self.balls[k].path_distance - expected) > 0.5:
+                            self.balls[k].path_distance = expected
                 else:
-                    # Matching join: snap front segment into perfect alignment then
-                    # check whether a combo formed.
+                    # Matching join: snap front segment, stop at next open gap.
+                    # Find the segment end using pre-shift gaps.
+                    seg_end = len(self.balls)
+                    for j in range(i + 1, len(self.balls) - 1):
+                        fwd_gap = self.balls[j + 1].path_distance - self.balls[j].path_distance
+                        if fwd_gap > _GAP_THRESHOLD:
+                            seg_end = j + 1
+                            break
                     snap_delta = (self.balls[i].path_distance + BALL_DIAMETER) - self.balls[i + 1].path_distance
-                    for j in range(i + 1, len(self.balls)):
+                    for j in range(i + 1, seg_end):
                         self.balls[j].path_distance += snap_delta
+                    # Re-pack: enforce exact spacing within segment
+                    for j in range(i + 1, seg_end - 1):
+                        expected = self.balls[j].path_distance + BALL_DIAMETER
+                        if abs(self.balls[j + 1].path_distance - expected) > 0.5:
+                            self.balls[j + 1].path_distance = expected
                     matches = self.check_matches(i)
                     if len(matches) < MATCH_MINIMUM:
                         matches = self.check_matches(i + 1)

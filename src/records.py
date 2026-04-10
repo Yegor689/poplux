@@ -46,3 +46,14 @@ def best_by_level() -> dict[str, dict]:
         if name not in result or r["score"] > result[name]["score"]:
             result[name] = r
     return result
+
+
+def max_unlocked(levels: list) -> int:
+    """Return the highest level index (0-based) the player has access to.
+    Level 0 is always unlocked.  Completing level N unlocks level N+1."""
+    completed = {r["level"] for r in load()}
+    unlocked = 0
+    for i, cfg in enumerate(levels):
+        if cfg["name"] in completed:
+            unlocked = min(i + 1, len(levels) - 1)
+    return unlocked

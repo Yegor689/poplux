@@ -6,7 +6,7 @@ from settings import BALL_RADIUS
 class Coin:
     x: float
     y: float
-    radius: int = 14
+    radius: int = 26
     lifetime: float = 12.0
     max_lifetime: float = 12.0
     pulse: float = 0.0
@@ -81,7 +81,7 @@ class ScorePopup:
 class AimPowerup:
     x: float
     y: float
-    radius: int = 16
+    radius: int = 28
     lifetime: float = 14.0
     max_lifetime: float = 14.0
     pulse: float = 0.0
