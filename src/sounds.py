@@ -31,6 +31,7 @@ def init() -> None:
     _sounds["level_complete"] = _make_level_complete()
     _sounds["game_over"]      = _make_game_over()
     _sounds["menu_click"]     = _make_menu_click()
+    _sounds["danger_beat"]    = _make_danger_beat()
 
 
 def play(name: str, volume: float = 0.5) -> None:
@@ -228,4 +229,16 @@ def _make_menu_click() -> pygame.mixer.Sound:
     t = np.linspace(0, dur, int(_RATE * dur), endpoint=False)
     wave = np.sin(2 * np.pi * 600 * t) * 0.3
     wave *= _envelope(len(wave), attack=0.001, release=0.025)
+    return _to_sound(wave)
+
+
+def _make_danger_beat() -> pygame.mixer.Sound:
+    """Deep bass thump for danger heartbeat."""
+    dur = 0.14
+    t = np.linspace(0, dur, int(_RATE * dur), endpoint=False)
+    freq = np.linspace(120, 55, len(t))
+    phase = np.cumsum(2 * np.pi * freq / _RATE)
+    wave = np.sin(phase) * 0.75
+    wave += _noise(dur) * 0.08
+    wave *= _envelope(len(wave), attack=0.002, release=0.09)
     return _to_sound(wave)

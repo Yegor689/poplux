@@ -60,7 +60,10 @@ class Game:
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
         self._spawn_hold: float = 0.0   # pause spawning briefly after bomb removal
+        self._shake = 0.0
         self._display_score: float = 0.0  # animated score counter
+        self._danger_beat_timer: float = 0.0
+        self._shake: float = 0.0   # current shake magnitude in logical px
         self._frame_chain_positions: list = []
         self._current_music: str = ""
         _assets = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ASSETS")
@@ -86,7 +89,6 @@ class Game:
         self.elapsed_time = 0.0
         self.score = 0
         self._display_score = 0.0
-        self.show_debug_hud = False
         self._spawn_hold = 0.0
 
         pre = min(cfg["pre_placed"], self._total_balls)
@@ -99,6 +101,7 @@ class Game:
         self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
+        self._danger_beat_timer = 0.0
         self.aim_powerups = []
         self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
         self._aim_powerup_timer = random.uniform(20.0, 35.0)
@@ -135,7 +138,7 @@ class Game:
         self.elapsed_time = 0.0
         self.score = 0
         self._display_score = 0.0
-        self.show_debug_hud = False
+
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
         self.spawned_count = pre
@@ -160,7 +163,7 @@ class Game:
         self.elapsed_time = 0.0
         self.score = 0
         self._display_score = 0.0
-        self.show_debug_hud = False
+
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
         self.spawned_count = pre
@@ -171,6 +174,7 @@ class Game:
         self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
         self._coin_timer = random.uniform(15.0, 25.0)
         self._slowdown_timer = 0.0
+        self._danger_beat_timer = 0.0
         self.aim_powerups = []
         self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
         self._aim_powerup_timer = random.uniform(20.0, 35.0)
@@ -229,6 +233,8 @@ class Game:
         """Transition to a new state, resetting the overlay fade when needed."""
         if new_state in self._OVERLAY_STATES and self.state not in self._OVERLAY_STATES:
             self._overlay_t = 0.0
+        if new_state not in ("playing", "combo_test"):
+            self._shake = 0.0
         self.state = new_state
 
     def run(self) -> None:
@@ -352,9 +358,7 @@ class Game:
                         self._init_game_state(self.current_level_idx)
                 if event.key == pygame.K_r and self.state == "combo_test":
                     self._init_combo_test()
-                if event.key == pygame.K_s and self.state == "playing":
-                    self.show_debug_hud = not self.show_debug_hud
-                elif event.key == pygame.K_s and self.state == "level_select":
+                if event.key == pygame.K_s and self.state == "level_select":
                     self._init_combo_test()
                 elif event.key == pygame.K_s and self.state == "main_menu":
                     self.state = "cheat_menu"
@@ -403,24 +407,25 @@ class Game:
                         sounds.play("menu_click", 0.4)
                         self._level_select_idx = action
                 elif self.state in ("playing", "combo_test"):
-                    ball = self.frog.shoot()
-                    sounds.play("shoot", 0.35)
-                    if self._aim_timer > 0:
-                        ball.dx *= 2.0   # aim powerup: 2× shoot speed
-                        ball.dy *= 2.0
-                    if "FASTBALL" in self.active_cheats:
-                        ball.dx *= 3.0
-                        ball.dy *= 3.0
-                    self.fired_balls.append(ball)
-                    if "MULTISHOT" in self.active_cheats:
-                        for offset in (-0.26, 0.26):  # ±15°
-                            co, so = math.cos(offset), math.sin(offset)
-                            extra = Ball(color=ball.color, radius=ball.radius)
-                            extra.x, extra.y = ball.x, ball.y
-                            extra.dx = ball.dx * co - ball.dy * so
-                            extra.dy = ball.dx * so + ball.dy * co
-                            extra.active = True
-                            self.fired_balls.append(extra)
+                    if self.frog.can_shoot:
+                        ball = self.frog.shoot()
+                        sounds.play("shoot", 0.35)
+                        if self._aim_timer > 0:
+                            ball.dx *= 2.0   # aim powerup: 2× shoot speed
+                            ball.dy *= 2.0
+                        if "FASTBALL" in self.active_cheats:
+                            ball.dx *= 3.0
+                            ball.dy *= 3.0
+                        self.fired_balls.append(ball)
+                        if "MULTISHOT" in self.active_cheats:
+                            for offset in (-0.26, 0.26):  # ±15°
+                                co, so = math.cos(offset), math.sin(offset)
+                                extra = Ball(color=ball.color, radius=ball.radius)
+                                extra.x, extra.y = ball.x, ball.y
+                                extra.dx = ball.dx * co - ball.dy * so
+                                extra.dy = ball.dx * so + ball.dy * co
+                                extra.active = True
+                                self.fired_balls.append(extra)
                 elif self.state == "level_complete":
                     btn = self.renderer.level_complete_button_at(mouse_pos)
                     if btn == 0:
@@ -492,6 +497,7 @@ class Game:
         color = self._POPUP_COLORS[min(cascade_level - 1, len(self._POPUP_COLORS) - 1)]
         if cascade_level > 1:
             sounds.play_cascade(cascade_level, 0.5)
+            self._shake = max(self._shake, min(cascade_level * 2.5, 8.0))
         else:
             sounds.play("pop", 0.45)
         life = 1.1
@@ -527,6 +533,8 @@ class Game:
 
     def _update(self, dt: float) -> None:
         self.elapsed_time += dt
+        if self._shake > 0:
+            self._shake = max(0.0, self._shake - self._shake * 12.0 * dt - 30.0 * dt)
         # Animate score counter: close gap in ~0.3s, minimum 50 pts/s so it always arrives
         if self._display_score < self.score:
             step = max(50.0, (self.score - self._display_score) / 0.3) * dt
@@ -600,6 +608,21 @@ class Game:
 
         if self._aim_timer > 0:
             self._aim_timer = max(0.0, self._aim_timer - dt)
+
+        # Danger heartbeat — beats faster as chain approaches hole
+        _front = self.chain.front_distance() if self.chain.balls else 0.0
+        _path_len = self.path.total_length if self.path else 1.0
+        _danger_frac = _front / _path_len if _path_len else 0.0
+        _DANGER_START = 0.82
+        if _danger_frac > _DANGER_START:
+            intensity = min(1.0, (_danger_frac - _DANGER_START) / (0.96 - _DANGER_START))
+            beat_interval = 1.2 - intensity * 0.8   # 1.2s → 0.4s
+            self._danger_beat_timer -= dt
+            if self._danger_beat_timer <= 0:
+                sounds.play("danger_beat", 0.28 + intensity * 0.22)
+                self._danger_beat_timer = beat_interval
+        else:
+            self._danger_beat_timer = 0.0
 
         for p in self.score_popups:
             p.update(dt)
@@ -722,6 +745,7 @@ class Game:
     def _explode_bomb(self, hit_idx: int) -> None:
         """Destroy balls within physical blast radius of hit_idx, spawn particles and popup."""
         sounds.play("bomb", 0.6)
+        self._shake = max(self._shake, 14.0)
         hx, hy = self.path.point_at(self.chain.balls[hit_idx].path_distance)
         indices = []
         positions = []
@@ -832,10 +856,8 @@ class Game:
                 remaining=len(self.chain.balls),
                 spawned=self.spawned_count,
                 total=self._total_balls,
-                level_name="COMBO TEST" if self._pre_pause_state == "combo_test" else (f"ENDLESS  {LEVELS[self.current_level_idx]['name']}" if self._endless_mode else LEVELS[self.current_level_idx]["name"]),
                 elapsed_time=self.elapsed_time,
                 score=int(self._display_score),
-                show_debug=self.show_debug_hud,
                 aim_timer=self._aim_timer,
                 slowdown_timer=self._slowdown_timer,
                 danger_frac=_front / _path_len if SETTINGS.danger_vignette else 0.0,
@@ -843,11 +865,12 @@ class Game:
             )
             _ov_alpha = int(self._overlay_t * 255)
             if self.state == "paused":
-                self.renderer.draw_pause_menu(mouse_pos, overlay_alpha=_ov_alpha)
+                _pause_name = "COMBO TEST" if self._pre_pause_state == "combo_test" else (f"ENDLESS  {LEVELS[self.current_level_idx]['name']}" if self._endless_mode else LEVELS[self.current_level_idx]["name"])
+                self.renderer.draw_pause_menu(mouse_pos, level_name=_pause_name, score=self.score, overlay_alpha=_ov_alpha)
             elif self.state == "level_complete":
                 next_idx = self.current_level_idx + 1
                 next_name = LEVELS[next_idx]["name"] if next_idx < len(LEVELS) else ""
-                self.renderer.draw_level_complete(mouse_pos, next_name, overlay_alpha=_ov_alpha)
+                self.renderer.draw_level_complete(mouse_pos, next_name, score=self.score, overlay_alpha=_ov_alpha)
             elif self.state == "game_complete":
                 self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time, overlay_alpha=_ov_alpha)
             elif self.state == "lose":
@@ -857,5 +880,12 @@ class Game:
         scale, ox, oy, scaled_w, scaled_h = self._scale_rect()
         scaled = pygame.transform.smoothscale(self._logical, (scaled_w, scaled_h))
         self.screen.fill((0, 0, 0))
-        self.screen.blit(scaled, (ox, oy))
+        if self.state not in ("playing", "combo_test"):
+            self._shake = 0.0
+        if self._shake > 0.5:
+            sx = int(random.uniform(-self._shake, self._shake) * scale)
+            sy = int(random.uniform(-self._shake, self._shake) * scale)
+        else:
+            sx, sy = 0, 0
+        self.screen.blit(scaled, (ox + sx, oy + sy))
         pygame.display.flip()

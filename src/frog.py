@@ -10,6 +10,7 @@ COLOR_NAMES = list(BALL_COLORS.keys())
 
 _RECOIL_MAX   = 9.0          # pixels of kick-back
 _RECOIL_DECAY = 1.0 / 0.14  # recoil-to-rest in ~0.14 s
+_SHOOT_COOLDOWN = 0.18       # minimum seconds between shots
 _BOMB_CHANCE    = 0.05  # probability any new ball is a bomb
 _RAINBOW_CHANCE = 0.05  # probability any new ball is a rainbow
 
@@ -21,17 +22,24 @@ class Frog:
         self.available_colors: list[str] = list(color_pool) if color_pool is not None else list(COLOR_NAMES)
         self.current_ball: Ball = self._new_ball()
         self.next_ball: Ball = self._new_ball()
-        self._recoil_t: float = 0.0  # 1 → 0 over the recoil duration
+        self._recoil_t: float = 0.0    # 1 → 0 over the recoil duration
+        self._cooldown_t: float = 0.0  # counts down to 0 after each shot
 
     @property
     def recoil(self) -> float:
         """Current displacement (px) opposite the aim direction."""
         return self._recoil_t * _RECOIL_MAX
 
+    @property
+    def can_shoot(self) -> bool:
+        return self._cooldown_t <= 0.0
+
     def tick(self, dt: float) -> None:
-        """Decay recoil animation each frame."""
+        """Decay recoil animation and shoot cooldown each frame."""
         if self._recoil_t > 0:
             self._recoil_t = max(0.0, self._recoil_t - _RECOIL_DECAY * dt)
+        if self._cooldown_t > 0:
+            self._cooldown_t = max(0.0, self._cooldown_t - dt)
 
     def _new_ball(self) -> Ball:
         pool = self.available_colors if self.available_colors else COLOR_NAMES
@@ -75,6 +83,7 @@ class Frog:
         ball.active = True
 
         self._recoil_t = 1.0
+        self._cooldown_t = _SHOOT_COOLDOWN
         self.current_ball = self.next_ball
         self.next_ball = self._new_ball()
         return ball

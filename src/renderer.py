@@ -30,6 +30,8 @@ class Renderer:
         # Cached surfaces — allocated once, cleared and reused each frame
         self._aim_line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         self._overlay_surf  = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        self._vign_surf     = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        self._vign_base_alpha: "np.ndarray | None" = None  # baked once on first use
 
     @staticmethod
     def _build_palettes() -> dict:
@@ -449,7 +451,7 @@ class Renderer:
     _DANGER_START = 0.82        # fraction of path at which danger begins
     _DANGER_PEAK  = 0.96        # fraction at which vignette is at full intensity
 
-    def draw_hud(self, remaining: int, spawned: int, total: int, level_name: str = "", elapsed_time: float = 0.0, score: int = 0, show_debug: bool = False, aim_timer: float = 0.0, slowdown_timer: float = 0.0, danger_frac: float = 0.0, fps: float = 0.0) -> None:
+    def draw_hud(self, remaining: int, spawned: int, total: int, elapsed_time: float = 0.0, score: int = 0, aim_timer: float = 0.0, slowdown_timer: float = 0.0, danger_frac: float = 0.0, fps: float = 0.0) -> None:
         # --- Danger vignette — red screen-edge pulse when chain is close to hole ---
         if danger_frac > self._DANGER_START:
             import numpy as np
@@ -460,25 +462,29 @@ class Renderer:
             pulse = 0.55 + 0.45 * math.sin(t * pulse_speed * math.pi)
             max_alpha = int(intensity * pulse * 160)
             if max_alpha > 4:
-                # Build gradient: each pixel gets alpha based on distance from nearest edge
-                ys, xs = np.mgrid[0:SCREEN_HEIGHT, 0:SCREEN_WIDTH]
-                dist_x = np.minimum(xs, SCREEN_WIDTH  - 1 - xs).astype(np.float32)
-                dist_y = np.minimum(ys, SCREEN_HEIGHT - 1 - ys).astype(np.float32)
-                dist   = np.minimum(dist_x, dist_y)
-                fade_px = SCREEN_HEIGHT * 0.22 * intensity
-                alpha_arr = np.clip(1.0 - dist / fade_px, 0.0, 1.0) ** 1.8
-                alpha_arr = (alpha_arr * max_alpha).astype(np.uint8)
-                vign = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-                pix = pygame.surfarray.pixels_alpha(vign)
+                # Bake the normalised gradient shape once (values 0–255 at full intensity).
+                # Every frame we just scale the pre-baked alpha by max_alpha/255.
+                if self._vign_base_alpha is None:
+                    ys, xs = np.mgrid[0:SCREEN_HEIGHT, 0:SCREEN_WIDTH]
+                    dist_x = np.minimum(xs, SCREEN_WIDTH  - 1 - xs).astype(np.float32)
+                    dist_y = np.minimum(ys, SCREEN_HEIGHT - 1 - ys).astype(np.float32)
+                    dist   = np.minimum(dist_x, dist_y)
+                    fade_px = SCREEN_HEIGHT * 0.22
+                    base = np.clip(1.0 - dist / fade_px, 0.0, 1.0) ** 1.8
+                    self._vign_base_alpha = (base * 255).astype(np.uint8)  # shape (H, W)
+                    # Pre-fill the RGB channels once — they never change
+                    rgb = pygame.surfarray.pixels3d(self._vign_surf)
+                    rgb[:, :, 0] = 220
+                    rgb[:, :, 1] = 30
+                    rgb[:, :, 2] = 30
+                    del rgb
+
+                # Scale the baked gradient by current max_alpha (cheap per-frame op)
+                alpha_arr = (self._vign_base_alpha * (max_alpha / 255.0)).astype(np.uint8)
+                pix = pygame.surfarray.pixels_alpha(self._vign_surf)
                 pix[:] = alpha_arr.T
                 del pix
-                # Fill red channel separately
-                rgb = pygame.surfarray.pixels3d(vign)
-                rgb[:, :, 0] = 220
-                rgb[:, :, 1] = 30
-                rgb[:, :, 2] = 30
-                del rgb
-                self.screen.blit(vign, (0, 0))
+                self.screen.blit(self._vign_surf, (0, 0))
 
         # --- Score — top-left, prominent ---
         label_surf = self.font_small.render("SCORE", True, (180, 180, 100))
@@ -543,19 +549,23 @@ class Renderer:
             fps_surf = self.font_small.render(f"{int(fps)} FPS", True, (100, 100, 100))
             self.screen.blit(fps_surf, fps_surf.get_rect(topright=(SCREEN_WIDTH - 23, 23)))
 
-        # --- Debug info — top-right (toggle with S) ---
-        if show_debug:
-            debug_x = SCREEN_WIDTH - 23
-            y = 23
-            items = []
-            if level_name:
-                items.append(level_name)
-            items.append(f"On path: {remaining}")
-            items.append(f"To spawn: {max(0, total - spawned)}")
-            for item in items:
-                surf = self.font_small.render(item, True, HUD_COLOR)
-                self.screen.blit(surf, surf.get_rect(topright=(debug_x, y)))
-                y += surf.get_height() + 4
+        # --- Balls remaining — top-right ---
+        to_go = max(0, total - spawned) + remaining
+        if total < 999_999:  # don't show in endless/combo-test
+            balls_label = self.font_small.render("BALLS LEFT", True, (140, 140, 160))
+            balls_value = self.font_score.render(str(to_go), True, HUD_COLOR)
+            pad_x, pad_y = 23, 16
+            box_w = max(balls_label.get_width(), balls_value.get_width()) + pad_x * 2
+            box_h = balls_label.get_height() + balls_value.get_height() + pad_y * 2 + 4
+            bx = SCREEN_WIDTH - 23 - box_w
+            fps_offset = (self.font_small.get_height() + 8) if SETTINGS.show_fps else 0
+            by = 23 + fps_offset
+            box_surf = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+            pygame.draw.rect(box_surf, (0, 0, 0, 140), box_surf.get_rect(), border_radius=10)
+            pygame.draw.rect(box_surf, (80, 80, 120, 80), box_surf.get_rect(), width=1, border_radius=10)
+            self.screen.blit(box_surf, (bx, by))
+            self.screen.blit(balls_label, balls_label.get_rect(centerx=bx + box_w // 2, top=by + pad_y))
+            self.screen.blit(balls_value, balls_value.get_rect(centerx=bx + box_w // 2, top=by + pad_y + balls_label.get_height() + 4))
 
     def _lose_button_rects(self) -> list:
         """Retry and Main Menu button rects — must match draw_lose geometry."""
@@ -1011,13 +1021,20 @@ class Renderer:
                 return i
         return None
 
-    def draw_pause_menu(self, mouse_pos, overlay_alpha: int = 255) -> None:
+    def draw_pause_menu(self, mouse_pos, level_name: str = "", score: int = 0, overlay_alpha: int = 255) -> None:
         overlay = self._overlay_surf
         overlay.fill((0, 0, 0, int(160 * overlay_alpha / 255)))
         self.screen.blit(overlay, (0, 0))
 
+        cx = SCREEN_WIDTH // 2
         title = self.font_large.render("PAUSED", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 280)))
+        self.screen.blit(title, title.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 280)))
+
+        if level_name:
+            name_surf = self.font_small.render(level_name, True, (140, 140, 160))
+            self.screen.blit(name_surf, name_surf.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 200)))
+        score_surf = self.font_med.render(f"Score  {score:,}", True, (200, 190, 80))
+        self.screen.blit(score_surf, score_surf.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 160)))
 
         colors      = [(35, 80, 35), (80, 60, 25), (80, 30, 30)]
         hover_colors = [(55, 130, 55), (130, 100, 40), (130, 50, 50)]
@@ -1043,10 +1060,12 @@ class Renderer:
     _LC_TITLE_BTN_GAP = 48   # gap between title bottom and buttons top
 
     def _level_complete_button_rects(self) -> list:
+        GAP = 22
         title_h = self.font_large.get_height()
-        total_h = title_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
+        score_block_h = self.font_small.get_height() + 6 + self.font_score.get_height()
+        total_h = title_h + GAP + score_block_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
         top = SCREEN_HEIGHT // 2 - total_h // 2
-        btn_y = top + title_h + self._LC_TITLE_BTN_GAP
+        btn_y = top + title_h + GAP + score_block_h + self._LC_TITLE_BTN_GAP
         total_w = 2 * self._LC_BTN_W + self._LC_BTN_GAP
         x = (SCREEN_WIDTH - total_w) // 2
         return [
@@ -1060,18 +1079,35 @@ class Renderer:
                 return i
         return None
 
-    def draw_level_complete(self, mouse_pos, next_level_name: str, overlay_alpha: int = 255) -> None:
+    def draw_level_complete(self, mouse_pos, next_level_name: str, score: int = 0, overlay_alpha: int = 255) -> None:
         overlay = self._overlay_surf
         overlay.fill((0, 0, 0, int(170 * overlay_alpha / 255)))
         self.screen.blit(overlay, (0, 0))
 
-        rects = self._level_complete_button_rects()
-        title_h = self.font_large.get_height()
-        total_h = title_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
+        cx = SCREEN_WIDTH // 2
+        GAP = 22
+
+        title_surf  = self.font_large.render("LEVEL COMPLETE!", True, (100, 240, 100))
+        score_label = self.font_small.render("SCORE", True, (140, 200, 140))
+        score_surf  = self.font_score.render(f"{score:,}", True, (160, 255, 160))
+
+        score_block_h = score_label.get_height() + 6 + score_surf.get_height()
+        total_h = title_surf.get_height() + GAP + score_block_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
         title_y = SCREEN_HEIGHT // 2 - total_h // 2
 
-        t = self.font_large.render("LEVEL COMPLETE!", True, (100, 240, 100))
-        self.screen.blit(t, t.get_rect(centerx=SCREEN_WIDTH // 2, top=title_y))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=title_y))
+        sy = title_y + title_surf.get_height() + GAP
+        self.screen.blit(score_label, score_label.get_rect(centerx=cx, top=sy))
+        self.screen.blit(score_surf,  score_surf.get_rect(centerx=cx, top=sy + score_label.get_height() + 6))
+
+        # Recompute button y to sit below score block
+        btn_y = title_y + title_surf.get_height() + GAP + score_block_h + self._LC_TITLE_BTN_GAP
+        total_w = 2 * self._LC_BTN_W + self._LC_BTN_GAP
+        x = (SCREEN_WIDTH - total_w) // 2
+        rects = [
+            pygame.Rect(x, btn_y, self._LC_BTN_W, self._LC_BTN_H),
+            pygame.Rect(x + self._LC_BTN_W + self._LC_BTN_GAP, btn_y, self._LC_BTN_W, self._LC_BTN_H),
+        ]
 
         labels = [f"Next: {next_level_name}", "Main Menu"]
         colors = [(55, 130, 55), (130, 55, 55)]
