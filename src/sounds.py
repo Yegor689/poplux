@@ -16,7 +16,7 @@ def init() -> None:
     global _initialized
     if _initialized:
         return
-    pygame.mixer.init(frequency=_RATE, size=-16, channels=1, buffer=512)
+    pygame.mixer.init(frequency=_RATE, size=-16, channels=2, buffer=512)
     _initialized = True
 
     _sounds["shoot"]          = _make_shoot()
@@ -65,13 +65,10 @@ def _envelope(n: int, attack: float = 0.01, release: float = 0.5) -> np.ndarray:
 
 
 def _to_sound(wave: np.ndarray) -> pygame.mixer.Sound:
-    """Convert a float64 wave (±1) to a 16-bit pygame Sound (stereo-safe)."""
+    """Convert a float64 wave (±1) to a 16-bit stereo pygame Sound."""
     wave = np.clip(wave, -1.0, 1.0)
     pcm = (wave * 32767).astype(np.int16)
-    # Duplicate mono to stereo if mixer expects 2 channels
-    channels = pygame.mixer.get_init()[2]
-    if channels == 2:
-        pcm = np.column_stack((pcm, pcm))
+    pcm = np.column_stack((pcm, pcm))  # mono → stereo
     return pygame.sndarray.make_sound(pcm)
 
 

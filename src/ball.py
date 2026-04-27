@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from settings import BALL_RADIUS
 
 
@@ -112,11 +112,12 @@ class Ball:
 
     # For chain balls
     path_distance: float = 0.0
-    path_offset: float = 0.0   # temporary visual displacement; animated to 0 after insertion
-    entry_t: float = 1.0       # 0 → 1 entry animation; <1 means still animating in
-    entry_x: float = 0.0       # screen x where ball was when it joined the chain
-    entry_y: float = 0.0       # screen y where ball was when it joined the chain
-    spin_angle: float = 0.0    # cumulative rotation angle (radians) for the rolling seam
+    path_offset: float = 0.0      # temporary visual displacement; animated to 0 after insertion
+    entry_t: float = 1.0          # 0 → 1 entry animation; <1 means still animating in
+    entry_x: float = 0.0          # screen x where ball was when it joined the chain
+    entry_y: float = 0.0          # screen y where ball was when it joined the chain
+    spin_angle: float = 0.0       # cumulative rotation angle (radians) for the rolling seam
+    _gap_remaining: float = 0.0   # gap still to open ahead after insertion (px)
 
     # For fired balls
     x: float = 0.0

@@ -197,7 +197,7 @@ class Renderer:
             pygame.gfxdraw.filled_circle(surf, sc, sc, 4, (0, 255, 255, alpha))
             self.screen.blit(surf, (cx - sc, cy - sc))
 
-    def draw_aim_line(self, frog, aim_timer: float, chain_positions: list = []) -> None:
+    def draw_aim_line(self, frog, aim_timer: float, chain_positions: list | None = None) -> None:
         if aim_timer <= 0:
             return
         base_alpha = int(220 * min(aim_timer / 2.0, 1.0))  # fade in over 2 s
@@ -207,6 +207,8 @@ class Renderer:
         adx = math.cos(frog.angle)
         ady = math.sin(frog.angle)
 
+        if chain_positions is None:
+            chain_positions = []
         # Compute proximity factor: how close the frog is to the chain
         # Closer chain = brighter, thicker, more opaque line
         if chain_positions:
@@ -731,13 +733,6 @@ class Renderer:
         if self._ls_endless_rect().collidepoint(pos):
             return "endless"
         for i, rect in enumerate(self._ls_row_rects(scroll)):
-            if rect.collidepoint(pos):
-                return i
-        return None
-
-    # Keep for backwards compat (combo test uses it)
-    def level_button_at(self, pos) -> "int | None":
-        for i, rect in enumerate(self._ls_row_rects()):
             if rect.collidepoint(pos):
                 return i
         return None

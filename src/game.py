@@ -62,7 +62,6 @@ class Game:
         self._aim_powerup_timer: float = 30.0
         self._aim_timer: float = 0.0
         self._spawn_hold: float = 0.0   # pause spawning briefly after bomb removal
-        self._shake = 0.0
         self._display_score: float = 0.0  # animated score counter
         self._danger_beat_timer: float = 0.0
         self._shake: float = 0.0   # current shake magnitude in logical px
@@ -73,41 +72,56 @@ class Game:
         self._music_ingame  = os.path.join(_assets, "IN-GAME.mp3")
         self._music_finish  = os.path.join(_assets, "FINISH.mp3")
 
-    def _init_game_state(self, level_idx: int) -> None:
-        self._current_music = ""  # force music reload on next _update_music call
-        self.current_level_idx = level_idx
-        self._level_select_idx = level_idx  # remember last played level (item 5)
+    @staticmethod
+    def _scale_pos(raw, sx, ox, sy):
+        """Scale a raw authored position to logical screen space."""
+        return [raw[0] * sx + ox, raw[1] * sy]
+
+    def _reset_session(self, level_idx: int, total_balls: int,
+                       frog_kwargs: dict | None = None,
+                       chain_kwargs: dict | None = None) -> None:
+        """Reset all per-session state shared by normal, endless, and combo-test modes."""
+        self._current_music = ""
         cfg = LEVELS[level_idx]
+        self.current_level_idx = level_idx
         self.path = Path(cfg)
         raw_frog = cfg.get("frog_pos")
-        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
-        self.frog = Frog(pos=frog_pos)
-        self.chain = Chain(self.path, cfg["chain_speed"])
+        frog_pos = self._scale_pos(raw_frog, _PATH_SCALE_X, _PATH_X_OFFSET, _PATH_SCALE_Y) if raw_frog else None
+        self.frog = Frog(pos=frog_pos, **(frog_kwargs or {}))
+        self.chain = Chain(self.path, cfg["chain_speed"], **(chain_kwargs or {}))
         self.fired_balls = []
         self.particles = []
         self.score_popups = []
         self.spawned_count = 0
-        self._total_balls = cfg["total_balls"]
+        self._total_balls = total_balls
         self.elapsed_time = 0.0
         self.score = 0
         self._display_score = 0.0
         self._spawn_hold = 0.0
-
+        self._slowdown_timer = 0.0
+        self._danger_beat_timer = 0.0
+        self._aim_timer = 0.0
+        self.coins = []
+        self.coin_spots = [
+            self._scale_pos(s, _PATH_SCALE_X, _PATH_X_OFFSET, _PATH_SCALE_Y)
+            for s in cfg.get("coin_spots", [])
+        ]
+        self._coin_timer = random.uniform(15.0, 25.0)
+        self.aim_powerups = []
+        self.aim_powerup_spots = [
+            self._scale_pos(s, _PATH_SCALE_X, _PATH_X_OFFSET, _PATH_SCALE_Y)
+            for s in cfg.get("aim_powerup_spots", [])
+        ]
+        self._aim_powerup_timer = random.uniform(20.0, 35.0)
         pre = min(cfg["pre_placed"], self._total_balls)
         self.chain.populate(pre)
         self.spawned_count = pre
 
+    def _init_game_state(self, level_idx: int) -> None:
+        self._level_select_idx = level_idx  # remember last played level
+        self._reset_session(level_idx, LEVELS[level_idx]["total_balls"])
         self._endless_mode = False
         self._pre_pause_state = "playing"
-        self.coins = []
-        self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
-        self._coin_timer = random.uniform(15.0, 25.0)
-        self._slowdown_timer = 0.0
-        self._danger_beat_timer = 0.0
-        self.aim_powerups = []
-        self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
-        self._aim_powerup_timer = random.uniform(20.0, 35.0)
-        self._aim_timer = 0.0
         self.state = "playing"
 
     _COMBO_TEST_COLORS = list(BALL_COLORS.keys())[:2]  # first two colours only
@@ -124,63 +138,19 @@ class Game:
 
     def _init_combo_test(self) -> None:
         """Secret combo-tester: two ball colours, infinite supply, no win/lose."""
-        cfg = LEVELS[0]
-        self.current_level_idx = 0
-        self.path = Path(cfg)
-        raw_frog = cfg.get("frog_pos")
-        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
-        self.frog = Frog(pos=frog_pos, color_pool=self._COMBO_TEST_COLORS)
-        self.chain = Chain(self.path, cfg["chain_speed"],
-                           color_pool=self._COMBO_TEST_COLORS, pair_mode=True)
-        self.fired_balls = []
-        self.particles = []
-        self.score_popups = []
-        self.spawned_count = 0
-        self._total_balls = 999_999
-        self.elapsed_time = 0.0
-        self.score = 0
-        self._display_score = 0.0
-
-        pre = min(cfg["pre_placed"], self._total_balls)
-        self.chain.populate(pre)
-        self.spawned_count = pre
+        self._reset_session(0, 999_999,
+                            frog_kwargs={"color_pool": self._COMBO_TEST_COLORS},
+                            chain_kwargs={"color_pool": self._COMBO_TEST_COLORS, "pair_mode": True})
         self._endless_mode = False
         self._pre_pause_state = "combo_test"
         self.state = "combo_test"
 
     def _init_endless_mode(self, level_idx: int = 0) -> None:
         """Endless mode: use any level's path, infinite balls, chain speeds up over time."""
-        cfg = LEVELS[level_idx]
-        self.current_level_idx = level_idx
-        self.path = Path(cfg)
-        raw_frog = cfg.get("frog_pos")
-        frog_pos = [raw_frog[0] * _PATH_SCALE_X + _PATH_X_OFFSET, raw_frog[1] * _PATH_SCALE_Y] if raw_frog else None
-        self.frog = Frog(pos=frog_pos)
-        self.chain = Chain(self.path, cfg["chain_speed"])
-        self.fired_balls = []
-        self.particles = []
-        self.score_popups = []
-        self.spawned_count = 0
-        self._total_balls = 999_999
-        self.elapsed_time = 0.0
-        self.score = 0
-        self._display_score = 0.0
-
-        pre = min(cfg["pre_placed"], self._total_balls)
-        self.chain.populate(pre)
-        self.spawned_count = pre
+        self._reset_session(level_idx, 999_999)
         self._endless_mode = True
-        self._endless_base_speed = float(cfg["chain_speed"])
+        self._endless_base_speed = float(LEVELS[level_idx]["chain_speed"])
         self._pre_pause_state = "playing"
-        self.coins = []
-        self.coin_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("coin_spots", [])]
-        self._coin_timer = random.uniform(15.0, 25.0)
-        self._slowdown_timer = 0.0
-        self._danger_beat_timer = 0.0
-        self.aim_powerups = []
-        self.aim_powerup_spots = [[s[0] * _PATH_SCALE_X + _PATH_X_OFFSET, s[1] * _PATH_SCALE_Y] for s in cfg.get("aim_powerup_spots", [])]
-        self._aim_powerup_timer = random.uniform(20.0, 35.0)
-        self._aim_timer = 0.0
         self.state = "playing"
 
     def _submit_cheat(self) -> None:
@@ -200,7 +170,7 @@ class Game:
             self._cheat_message = f"{code}  [OFF]"
         else:
             self.active_cheats.add(code)
-            self._cheat_message = f"{code}  [ARMED]" if code == "CLEARALL" else f"{code}  [ON]"
+            self._cheat_message = f"{code}  [ON]"
 
     def _ls_scroll_to(self, idx: int) -> None:
         """Ensure the selected level row is visible in the list."""
@@ -397,6 +367,8 @@ class Game:
                         self._init_game_state(0)
                     elif btn == 1:
                         self.state = "level_select"
+                        self._ls_scroll = 0
+                        self._ls_scroll_to(self._level_select_idx)
                     elif btn == 2:
                         self.state = "records"
                         self._records_scroll = 0
@@ -688,13 +660,9 @@ class Game:
                         ball.dx = math.cos(new_angle) * speed
                         ball.dy = math.sin(new_angle) * speed
 
-        to_remove = []
         for ball in self.fired_balls:
             ball.move(dt)
-            if self._out_of_bounds(ball):
-                to_remove.append(ball)
-        for b in to_remove:
-            self.fired_balls.remove(b)
+        self.fired_balls = [b for b in self.fired_balls if not self._out_of_bounds(b)]
 
         self._check_collisions()
         self._check_coin_collisions()
@@ -728,8 +696,8 @@ class Game:
                 ball.y < -BALL_RADIUS or ball.y > SCREEN_HEIGHT + BALL_RADIUS)
 
     def _check_collisions(self) -> None:
-        to_remove = []
         chain_positions = self._frame_chain_positions
+        surviving = []
         for fired in self.fired_balls:
             hit_idx = None
             best_dist_sq = float('inf')
@@ -752,10 +720,9 @@ class Game:
                     matches = self.chain.check_matches(idx)
                     if len(matches) >= MATCH_MINIMUM:
                         self.chain.queue_match(matches)
-                to_remove.append(fired)
-
-        for b in to_remove:
-            self.fired_balls.remove(b)
+            else:
+                surviving.append(fired)
+        self.fired_balls = surviving
 
     _BOMB_RADIUS = BALL_RADIUS * 6  # physical blast radius in screen pixels
 
@@ -799,11 +766,11 @@ class Game:
     def _check_coin_collisions(self) -> None:
         if not self.coins or not self.fired_balls:
             return
-        coins_hit = []
-        balls_used = []
+        hit_coin_ids: set[int] = set()
+        hit_ball_ids: set[int] = set()
         for coin in self.coins:
             for ball in self.fired_balls:
-                if ball in balls_used:
+                if id(ball) in hit_ball_ids:
                     continue
                 dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
                 if dist_sq <= (ball.radius + coin.radius) ** 2:
@@ -812,13 +779,12 @@ class Game:
                     self.score_popups.append(
                         ScorePopup(coin.x, coin.y, "+50", (255, 215, 0), 1.1, 1.1)
                     )
-                    coins_hit.append(coin)
-                    balls_used.append(ball)
+                    hit_coin_ids.add(id(coin))
+                    hit_ball_ids.add(id(ball))
                     break
-        for c in coins_hit:
-            self.coins.remove(c)
-        for b in balls_used:
-            self.fired_balls.remove(b)
+        if hit_coin_ids:
+            self.coins = [c for c in self.coins if id(c) not in hit_coin_ids]
+            self.fired_balls = [b for b in self.fired_balls if id(b) not in hit_ball_ids]
 
     def _check_aim_powerup_collisions(self) -> None:
         """Fired balls collect aim powerups without being consumed."""

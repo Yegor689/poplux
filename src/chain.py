@@ -125,16 +125,15 @@ class Chain:
         # --- Gap-opening for inserting balls ---
         # Push balls ahead in the SAME segment only (stop at first open gap).
         for i, b in enumerate(self.balls):
-            gap_rem = getattr(b, '_gap_remaining', 0.0)
-            if gap_rem > 0:
-                push = min(gap_rem, _GAP_OPEN_SPEED * dt)
-                b._gap_remaining = gap_rem - push
+            if b._gap_remaining > 0:
+                push = min(b._gap_remaining, _GAP_OPEN_SPEED * dt)
+                b._gap_remaining -= push
                 # Only push if no other inserter ahead in the same segment
                 has_gap_ahead = False
                 for k in range(i + 1, len(self.balls)):
                     if self.balls[k].path_distance - self.balls[k - 1].path_distance > _GAP_THRESHOLD:
                         break
-                    if getattr(self.balls[k], '_gap_remaining', 0.0) > 0:
+                    if self.balls[k]._gap_remaining > 0:
                         has_gap_ahead = True
                         break
                 if not has_gap_ahead:
@@ -154,7 +153,7 @@ class Chain:
         # --- Identify open gaps (skip insertion gaps) ---
         open_gaps: list[tuple[int, bool]] = []  # (index, colors_match)
         for i, gap in enumerate(cur_gaps):
-            if getattr(self.balls[i], '_gap_remaining', 0.0) > 0:
+            if self.balls[i]._gap_remaining > 0:
                 continue
             if gap > _GAP_THRESHOLD:
                 match = self.balls[i].color == self.balls[i + 1].color
@@ -185,7 +184,7 @@ class Chain:
             return  # don't queue another cascade while one is in flight
 
         for i in range(len(self.balls) - 1):
-            if getattr(self.balls[i], '_gap_remaining', 0.0) > 0:
+            if self.balls[i]._gap_remaining > 0:
                 continue
             was_open = i < len(prev_gaps) and prev_gaps[i] > _GAP_THRESHOLD
             if not was_open:
@@ -306,7 +305,7 @@ class Chain:
         ball.entry_y = ball.y
         ball.entry_t = 0.0
         # How much gap still needs to open ahead (animated in advance())
-        ball._gap_remaining = float(BALL_DIAMETER)
+        ball._gap_remaining = BALL_DIAMETER
 
         self.balls.insert(idx, ball)
         return idx

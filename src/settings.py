@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 # Display
 SCREEN_WIDTH = 1920
@@ -32,7 +33,6 @@ PATH_NUM_POINTS = 500
 _levels_dir = os.path.join(os.path.dirname(__file__), "levels")
 
 def _level_sort_key(fname):
-    import re
     m = re.search(r'(\d+)', fname)
     return int(m.group(1)) if m else fname
 

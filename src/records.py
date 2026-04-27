@@ -9,18 +9,26 @@ import platformdirs
 _DATA_DIR = platformdirs.user_data_dir("Poplux")
 _RECORDS_FILE = os.path.join(_DATA_DIR, "records.json")
 
+_cache: list[dict] | None = None
+
 
 def load() -> list[dict]:
-    """Return all saved records, newest first. Returns [] on missing/corrupt file."""
+    """Return all saved records, newest first. Returns [] on missing/corrupt file.
+    Result is cached in memory; invalidated by save()."""
+    global _cache
+    if _cache is not None:
+        return _cache
     try:
         with open(_RECORDS_FILE, encoding="utf-8") as f:
-            return json.load(f)
+            _cache = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return []
+        _cache = []
+    return _cache
 
 
 def save(level_name: str, score: int, elapsed: float) -> None:
     """Append a new record and persist to disk."""
+    global _cache
     records = load()
     records.append({
         "level": level_name,
@@ -31,6 +39,7 @@ def save(level_name: str, score: int, elapsed: float) -> None:
     os.makedirs(_DATA_DIR, exist_ok=True)
     with open(_RECORDS_FILE, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2)
+    _cache = None  # invalidate so next load() re-reads from disk
 
 
 def top(n: int = 50) -> list[dict]:
