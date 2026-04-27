@@ -34,12 +34,12 @@ class _Asteroid:
         self.surf_cache: pygame.Surface | None = None
 
 
-_NUM_ASTEROIDS = 28
+_NUM_ASTEROIDS = 22
 
 
 def _make_asteroid() -> _Asteroid:
-    base_r = random.uniform(14, 42)
-    speed = random.uniform(12, 48)
+    base_r = random.uniform(28, 72)
+    speed = random.uniform(8, 32)
     dir_a = random.uniform(0, 2 * math.pi)
     return _Asteroid(
         x=random.uniform(0, SCREEN_WIDTH),
@@ -47,9 +47,9 @@ def _make_asteroid() -> _Asteroid:
         dx=math.cos(dir_a) * speed,
         dy=math.sin(dir_a) * speed,
         angle=random.uniform(0, 2 * math.pi),
-        spin=random.choice([-1, 1]) * random.uniform(0.15, 1.1),
+        spin=random.choice([-1, 1]) * random.uniform(0.08, 0.6),
         base_r=base_r,
-        scale_x=random.uniform(0.6, 1.0),
+        scale_x=random.uniform(0.65, 1.0),
         scale_y=random.uniform(0.55, 0.85),
     )
 
@@ -94,10 +94,10 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     # ------------------------------------------------------------------ #
     # 2. Texture: noisy grey-brown fill via numpy                         #
     # ------------------------------------------------------------------ #
-    # Base colour: dark grey-brown rock, subtle per-asteroid tint variation
-    base_v = rng.randint(44, 62)
-    tint_r = rng.randint(0, 10)    # slight warm bias (rocks are rarely cool)
-    tint_b = rng.randint(-8, -2)
+    # Base colour: medium grey-brown rock, visible against dark space
+    base_v = rng.randint(72, 98)
+    tint_r = rng.randint(2, 14)    # slight warm bias
+    tint_b = rng.randint(-10, -3)
 
     # Build pixel arrays: shape (size, size, 4) RGBA
     px = np.zeros((size, size, 4), dtype=np.uint8)
@@ -134,9 +134,8 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     fine = prng.uniform(-6, 6, size=(size, size)).astype(np.float32)
     noise = (coarse_up * 0.65 + fine * 0.35).astype(np.float32)
 
-    # -- Very subtle ambient occlusion shading (edges slightly darker) --
-    # No directional light — just darken toward edges for a rounded feel
-    vignette = np.clip((norm_dist - 0.4) * -7, -9, 0).astype(np.float32)
+    # -- Edge darkening: creates a rounded, readable silhouette --
+    vignette = np.clip((norm_dist - 0.35) * -18, -22, 0).astype(np.float32)
 
     v = base_v + noise + vignette
 
@@ -223,13 +222,13 @@ class Background:
         for _ in range(400):
             x = rng.randint(0, SCREEN_WIDTH)
             y = rng.randint(0, SCREEN_HEIGHT)
-            kind = rng.choices(['dim', 'mid', 'bright'], weights=[50, 35, 15])[0]
+            kind = rng.choices(['dim', 'mid', 'bright'], weights=[45, 35, 20])[0]
             if kind == 'dim':
-                r, brightness = 1, rng.randint(100, 180)
+                r, brightness = 1, rng.randint(130, 200)
             elif kind == 'mid':
-                r, brightness = 1, rng.randint(180, 225)
+                r, brightness = 2, rng.randint(200, 240)
             else:
-                r, brightness = 2, rng.randint(230, 255)
+                r, brightness = 3, rng.randint(240, 255)
             tint = rng.choice([(10, 10, 40), (0, 0, 0), (30, 20, 0)])
             col = tuple(min(255, brightness + t) for t in tint)
             if r == 1:
@@ -238,8 +237,8 @@ class Background:
                 _aa_circle(surf, col, (x, y), r)
             if kind == 'bright':
                 dim = tuple(c // 3 for c in col)
-                pygame.draw.line(surf, dim, (x - 8, y), (x + 8, y), 1)
-                pygame.draw.line(surf, dim, (x, y - 8), (x, y + 8), 1)
+                pygame.draw.line(surf, dim, (x - 12, y), (x + 12, y), 1)
+                pygame.draw.line(surf, dim, (x, y - 12), (x, y + 12), 1)
         return surf
 
     def update(self, dt: float) -> None:
