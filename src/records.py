@@ -34,18 +34,45 @@ def save(level_name: str, score: int, elapsed: float) -> None:
 
 
 def top(n: int = 50) -> list[dict]:
-    """Return up to n records sorted by score descending."""
-    return sorted(load(), key=lambda r: r["score"], reverse=True)[:n]
+    """Return up to n normal-level records sorted by score descending."""
+    all_r = [r for r in load() if not r["level"].startswith("Endless")]
+    return sorted(all_r, key=lambda r: r["score"], reverse=True)[:n]
+
+
+def top_endless(n: int = 50) -> list[dict]:
+    """Return up to n endless-mode records sorted by score descending."""
+    all_r = [r for r in load() if r["level"].startswith("Endless")]
+    return sorted(all_r, key=lambda r: r["score"], reverse=True)[:n]
 
 
 def best_by_level() -> dict[str, dict]:
-    """Return the best (highest-score) record for each level name."""
+    """Return the best (highest-score) normal-level record for each level name."""
     result: dict[str, dict] = {}
     for r in load():
         name = r["level"]
+        if name.startswith("Endless"):
+            continue
         if name not in result or r["score"] > result[name]["score"]:
             result[name] = r
     return result
+
+
+def best_by_endless() -> dict[str, dict]:
+    """Return the best (highest-score) endless record per level slot."""
+    result: dict[str, dict] = {}
+    for r in load():
+        name = r["level"]
+        if not name.startswith("Endless"):
+            continue
+        if name not in result or r["score"] > result[name]["score"]:
+            result[name] = r
+    return result
+
+
+def is_new_best(level_name: str, score: int) -> bool:
+    """Return True if score is strictly better than the previous best for this level."""
+    best = best_by_level().get(level_name)
+    return best is None or score > best["score"]
 
 
 def max_unlocked(levels: list) -> int:

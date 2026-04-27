@@ -94,10 +94,10 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     # ------------------------------------------------------------------ #
     # 2. Texture: noisy grey-brown fill via numpy                         #
     # ------------------------------------------------------------------ #
-    # Base colour palette for this asteroid (slight per-asteroid variation)
-    base_v = rng.randint(58, 78)
-    tint_r = rng.randint(-4, 8)   # slight warm/cool tint
-    tint_b = rng.randint(-6, 2)
+    # Base colour: dark grey-brown rock, subtle per-asteroid tint variation
+    base_v = rng.randint(44, 62)
+    tint_r = rng.randint(0, 10)    # slight warm bias (rocks are rarely cool)
+    tint_b = rng.randint(-8, -2)
 
     # Build pixel arrays: shape (size, size, 4) RGBA
     px = np.zeros((size, size, 4), dtype=np.uint8)
@@ -108,55 +108,40 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     dy_arr = (ys - cy).astype(np.float32)
 
     # Per-pixel angle and normalised elliptical radius
-    ang = np.arctan2(dy_arr, dx_arr)            # (size,size)
-    # Interpolate silhouette radius at each pixel angle
+    ang = np.arctan2(dy_arr, dx_arr)
     idx = ((ang % (2 * math.pi)) / (2 * math.pi) * N_ANGLES).astype(int) % N_ANGLES
     mask_rx = radii_x[idx]
     mask_ry = radii_y[idx]
-    # Ellipse-normalised distance: 1.0 = on boundary
     safe_rx = np.where(mask_rx > 0, mask_rx, 1)
     safe_ry = np.where(mask_ry > 0, mask_ry, 1)
     norm_dist = np.sqrt((dx_arr / safe_rx) ** 2 + (dy_arr / safe_ry) ** 2)
-    inside = norm_dist <= 1.0   # boolean mask
+    inside = norm_dist <= 1.0
 
-    # -- Noise texture (two octaves of value noise, pure numpy) --
+    # -- Noise texture (two octaves of value noise) --
     seed = rng.randint(0, 2**31)
     prng = np.random.default_rng(seed)
-    # Coarse grain: generate small grid, tile-repeat to full size
-    grain_scale = max(2, size // 8)
+    grain_scale = max(2, size // 7)
     small_h = size // grain_scale + 2
     small_w = size // grain_scale + 2
-    coarse_small = prng.uniform(0, 38, size=(small_h, small_w)).astype(np.float32)
-    # Nearest-neighbour upsample then smooth with a simple box kernel
+    coarse_small = prng.uniform(0, 22, size=(small_h, small_w)).astype(np.float32)
     coarse_up = np.repeat(np.repeat(coarse_small, grain_scale, axis=0),
                           grain_scale, axis=1)[:size, :size]
-    # Cheap 5x5 box blur for smooth coarse noise
     k = 5
     for _ in range(2):
         pad_c = np.pad(coarse_up, k // 2, mode='edge')
         coarse_up = sum(pad_c[i:i+size, j:j+size]
                         for i in range(k) for j in range(k)) / (k * k)
-    # Fine grain
-    fine = prng.uniform(-9, 9, size=(size, size)).astype(np.float32)
+    fine = prng.uniform(-6, 6, size=(size, size)).astype(np.float32)
+    noise = (coarse_up * 0.65 + fine * 0.35).astype(np.float32)
 
-    noise = (coarse_up * 0.7 + fine * 0.3).astype(np.float32)
+    # -- Very subtle ambient occlusion shading (edges slightly darker) --
+    # No directional light — just darken toward edges for a rounded feel
+    vignette = np.clip((norm_dist - 0.4) * -7, -9, 0).astype(np.float32)
 
-    # -- Radial shading (light from top-left) --
-    light_dir = np.array([-0.6, -0.6], dtype=np.float32)
-    dist_safe = np.where(norm_dist > 0, norm_dist, 1e-6)
-    nx = dx_arr / dist_safe
-    ny = dy_arr / dist_safe
-    diffuse = -(nx * light_dir[0] + ny * light_dir[1])   # −1..1, positive = lit
-    shading = (diffuse * 10).astype(np.float32)           # ±10 brightness swing
-
-    # Soft vignette: darken edges slightly
-    vignette = np.clip((1.0 - norm_dist) * 10, -6, 0).astype(np.float32)
-
-    # Combine
-    v = base_v + noise + shading + vignette
+    v = base_v + noise + vignette
 
     px[:, :, 0] = np.clip(v + tint_r, 0, 255).astype(np.uint8)
-    px[:, :, 1] = np.clip(v - 2,      0, 255).astype(np.uint8)
+    px[:, :, 1] = np.clip(v,          0, 255).astype(np.uint8)
     px[:, :, 2] = np.clip(v + tint_b, 0, 255).astype(np.uint8)
     px[:, :, 3] = np.where(inside, 255, 0).astype(np.uint8)
 
@@ -164,42 +149,56 @@ def _build_asteroid_surf(a: _Asteroid, rng: random.Random) -> pygame.Surface:
     surf = surf.convert_alpha()
     alpha_surf = pygame.Surface((size, size), pygame.SRCALPHA)
     alpha_surf.blit(surf, (0, 0))
-    # Apply alpha mask
     alpha_arr = pygame.surfarray.pixels_alpha(alpha_surf)
     alpha_arr[:] = px[:, :, 3].T
     del alpha_arr
 
     # ------------------------------------------------------------------ #
-    # 3. Craters                                                          #
+    # 3. Craters — drawn into the pixel array so they blend with shading  #
     # ------------------------------------------------------------------ #
-    n_craters = rng.randint(2, max(3, R // 7))
+    # Use numpy-drawn craters: elliptical dark bowl + subtle bright rim
+    crater_px = np.array(px, dtype=np.float32)  # work in float for blending
+
+    n_craters = rng.randint(2, max(3, R // 9))
     for _ in range(n_craters):
-        # Place inside inner 65% so crater stays inside rock
         cr_angle = rng.uniform(0, 2 * math.pi)
-        cr_dist = rng.uniform(0, 0.62)
-        # Approximate ellipse boundary at this angle for placement
-        bx = math.cos(cr_angle) * radii_x[int(cr_angle / (2*math.pi) * N_ANGLES) % N_ANGLES]
-        by = math.sin(cr_angle) * radii_y[int(cr_angle / (2*math.pi) * N_ANGLES) % N_ANGLES]
-        crx = int(cx + math.cos(cr_angle) * abs(bx) * cr_dist)
-        cry = int(cy + math.sin(cr_angle) * abs(by) * cr_dist)
-        cr = max(2, int(R * rng.uniform(0.07, 0.22)))
+        cr_dist  = rng.uniform(0, 0.52)   # keep well inside boundary
+        ai = int(cr_angle / (2 * math.pi) * N_ANGLES) % N_ANGLES
+        crx = cx + math.cos(cr_angle) * radii_x[ai] * cr_dist
+        cry = cy + math.sin(cr_angle) * radii_y[ai] * cr_dist
+        # Cap crater radius: at most 18 % of R and at most 6 px
+        cr = min(6, max(2, int(R * rng.uniform(0.06, 0.14))))
 
-        # Dark bowl
-        pygame.gfxdraw.filled_circle(alpha_surf, crx, cry, cr,
-                                     (22, 20, 17, 200))
-        # Rim — full dark ring
-        pygame.gfxdraw.aacircle(alpha_surf, crx, cry, cr,
-                                (18, 16, 13, 230))
-        # Bright highlight arc (top-left of rim)
-        if cr >= 3:
-            pygame.gfxdraw.aacircle(alpha_surf, crx - 1, cry - 1, cr - 1,
-                                    (105, 98, 86, 90))
+        # Per-pixel distance from crater centre
+        cdx = xs - crx
+        cdy = ys - cry
+        cdist = np.sqrt(cdx**2 + cdy**2).astype(np.float32)
+
+        # Bowl: smooth darkening inside crater radius
+        bowl_mask = (cdist < cr) & inside
+        bowl_fade = np.where(bowl_mask, (1.0 - cdist / cr) ** 1.4, 0.0)
+        darken = bowl_fade * 28   # max -28 brightness at centre
+
+        # Rim: thin bright ring just outside bowl, lit side only
+        rim_mask = (cdist >= cr) & (cdist < cr + 2.5) & inside
+        # Lit from upper-left: rim highlight only on the shadow side
+        rim_dot  = (cdx * 0.6 + cdy * 0.6) / (cdist + 1e-6)
+        rim_bright = np.where(rim_mask & (rim_dot > 0.1),
+                              (1.0 - (cdist - cr) / 2.5) * 16, 0.0)
+
+        for ch in range(3):
+            crater_px[:, :, ch] = np.clip(
+                crater_px[:, :, ch] - darken + rim_bright, 0, 255)
+
+    # Write crater result back
+    alpha_surf_arr = pygame.surfarray.pixels3d(alpha_surf)
+    alpha_surf_arr[:] = crater_px[:, :, :3].swapaxes(0, 1).astype(np.uint8)
+    del alpha_surf_arr
 
     # ------------------------------------------------------------------ #
-    # 4. Edge outline                                                      #
+    # 4. Edge outline — subtle, matches rock colour                       #
     # ------------------------------------------------------------------ #
-    # Draw a slightly brighter 1-px outline along the silhouette
-    pygame.draw.polygon(alpha_surf, (100, 94, 82, 220), poly_pts, 1)
+    pygame.draw.polygon(alpha_surf, (70, 66, 58, 200), poly_pts, 1)
 
     return alpha_surf
 

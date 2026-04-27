@@ -27,6 +27,8 @@ class Game:
         self.renderer = Renderer(self._logical)
         self.state = "main_menu"
         self._records_scroll = 0
+        self._records_tab = 0  # 0 = per-level grid, 1 = all runs
+        self._level_complete_new_best = False
         self._level_select_idx = 0
         self._ls_scroll = 0
         self._ls_hover_suppressed = False
@@ -286,12 +288,13 @@ class Game:
             if event.type == pygame.QUIT:
                 return False
             if event.type == pygame.MOUSEWHEEL and self.state == "records":
-                all_records = records_store.top()
-                max_rows = self.renderer.records_max_rows()
-                self._records_scroll = max(0, min(
-                    self._records_scroll - event.y,
-                    max(0, len(all_records) - max_rows)
-                ))
+                if self._records_tab == 2:
+                    all_records = records_store.top()
+                    max_rows = self.renderer.records_max_rows()
+                    self._records_scroll = max(0, min(
+                        self._records_scroll - event.y,
+                        max(0, len(all_records) - max_rows)
+                    ))
             if event.type == pygame.MOUSEMOTION and self.state == "settings":
                 if event.buttons[0]:  # left button held — drag slider
                     action = self.renderer.settings_interact(mouse_pos, SETTINGS)
@@ -324,12 +327,19 @@ class Game:
                 if event.key == pygame.K_SPACE and self.state == "paused":
                     self.state = self._pre_pause_state
                 if self.state == "records":
-                    all_records = records_store.top()
-                    max_rows = self.renderer.records_max_rows()
-                    if event.key == pygame.K_DOWN:
-                        self._records_scroll = min(self._records_scroll + 1, max(0, len(all_records) - max_rows))
-                    elif event.key == pygame.K_UP:
-                        self._records_scroll = max(0, self._records_scroll - 1)
+                    if event.key == pygame.K_LEFT:
+                        self._records_tab = max(0, self._records_tab - 1)
+                        self._records_scroll = 0
+                    elif event.key == pygame.K_RIGHT:
+                        self._records_tab = min(2, self._records_tab + 1)
+                        self._records_scroll = 0
+                    elif self._records_tab == 2:
+                        all_records = records_store.top()
+                        max_rows = self.renderer.records_max_rows()
+                        if event.key == pygame.K_DOWN:
+                            self._records_scroll = min(self._records_scroll + 1, max(0, len(all_records) - max_rows))
+                        elif event.key == pygame.K_UP:
+                            self._records_scroll = max(0, self._records_scroll - 1)
                 if self.state == "level_select":
                     if event.key == pygame.K_DOWN:
                         self._level_select_idx = min(self._level_select_idx + 1, len(LEVELS) - 1)
@@ -390,6 +400,7 @@ class Game:
                     elif btn == 2:
                         self.state = "records"
                         self._records_scroll = 0
+                        self._records_tab = 0
                     elif btn == 3:
                         self.state = "settings"
                     elif btn == 4:
@@ -406,6 +417,11 @@ class Game:
                     elif isinstance(action, int):
                         sounds.play("menu_click", 0.4)
                         self._level_select_idx = action
+                elif self.state == "records":
+                    tab = self.renderer.records_tab_at(mouse_pos)
+                    if tab is not None and tab != self._records_tab:
+                        self._records_tab = tab
+                        self._records_scroll = 0
                 elif self.state in ("playing", "combo_test"):
                     if self.frog.can_shoot:
                         ball = self.frog.shoot()
@@ -427,7 +443,7 @@ class Game:
                                 extra.active = True
                                 self.fired_balls.append(extra)
                 elif self.state == "level_complete":
-                    btn = self.renderer.level_complete_button_at(mouse_pos)
+                    btn = self.renderer.level_complete_button_at(mouse_pos, self._level_complete_new_best)
                     if btn == 0:
                         self._init_game_state(self.current_level_idx + 1)
                     elif btn == 1:
@@ -692,6 +708,7 @@ class Game:
         if self.state != "combo_test":
             if self.chain.is_empty() and self.spawned_count >= self._total_balls:
                 level_name = LEVELS[self.current_level_idx]["name"]
+                self._level_complete_new_best = records_store.is_new_best(level_name, self.score)
                 records_store.save(level_name, self.score, self.elapsed_time)
                 if self.current_level_idx + 1 < len(LEVELS):
                     sounds.play("level_complete", 0.6)
@@ -836,7 +853,11 @@ class Game:
             _ls_mouse = (-1, -1) if self._ls_hover_suppressed else mouse_pos
             self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll, self._max_unlocked(), self._all_unlocked)
         elif self.state == "records":
-            self.renderer.draw_records(records_store.top(), self._records_scroll)
+            self.renderer.draw_records(records_store.top(), self._records_scroll,
+                                       tab=self._records_tab,
+                                       best_by_level=records_store.best_by_level(),
+                                       endless_records=records_store.top_endless(),
+                                       best_by_endless=records_store.best_by_endless())
         elif self.state == "settings":
             self.renderer.draw_settings(mouse_pos, SETTINGS)
         else:
@@ -870,7 +891,7 @@ class Game:
             elif self.state == "level_complete":
                 next_idx = self.current_level_idx + 1
                 next_name = LEVELS[next_idx]["name"] if next_idx < len(LEVELS) else ""
-                self.renderer.draw_level_complete(mouse_pos, next_name, score=self.score, overlay_alpha=_ov_alpha)
+                self.renderer.draw_level_complete(mouse_pos, next_name, score=self.score, new_best=self._level_complete_new_best, overlay_alpha=_ov_alpha)
             elif self.state == "game_complete":
                 self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time, overlay_alpha=_ov_alpha)
             elif self.state == "lose":

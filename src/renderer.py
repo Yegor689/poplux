@@ -1059,10 +1059,12 @@ class Renderer:
     _LC_BTN_GAP = 32
     _LC_TITLE_BTN_GAP = 48   # gap between title bottom and buttons top
 
-    def _level_complete_button_rects(self) -> list:
+    def _level_complete_button_rects(self, new_best: bool = False) -> list:
         GAP = 22
         title_h = self.font_large.get_height()
         score_block_h = self.font_small.get_height() + 6 + self.font_score.get_height()
+        if new_best:
+            score_block_h += 10 + self.font_small.get_height()
         total_h = title_h + GAP + score_block_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
         top = SCREEN_HEIGHT // 2 - total_h // 2
         btn_y = top + title_h + GAP + score_block_h + self._LC_TITLE_BTN_GAP
@@ -1073,13 +1075,13 @@ class Renderer:
             pygame.Rect(x + self._LC_BTN_W + self._LC_BTN_GAP, btn_y, self._LC_BTN_W, self._LC_BTN_H),
         ]
 
-    def level_complete_button_at(self, pos) -> "int | None":
-        for i, rect in enumerate(self._level_complete_button_rects()):
+    def level_complete_button_at(self, pos, new_best: bool = False) -> "int | None":
+        for i, rect in enumerate(self._level_complete_button_rects(new_best)):
             if rect.collidepoint(pos):
                 return i
         return None
 
-    def draw_level_complete(self, mouse_pos, next_level_name: str, score: int = 0, overlay_alpha: int = 255) -> None:
+    def draw_level_complete(self, mouse_pos, next_level_name: str, score: int = 0, new_best: bool = False, overlay_alpha: int = 255) -> None:
         overlay = self._overlay_surf
         overlay.fill((0, 0, 0, int(170 * overlay_alpha / 255)))
         self.screen.blit(overlay, (0, 0))
@@ -1090,15 +1092,24 @@ class Renderer:
         title_surf  = self.font_large.render("LEVEL COMPLETE!", True, (100, 240, 100))
         score_label = self.font_small.render("SCORE", True, (140, 200, 140))
         score_surf  = self.font_score.render(f"{score:,}", True, (160, 255, 160))
+        best_surf   = self.font_small.render("NEW BEST!", True, (255, 220, 50)) if new_best else None
 
         score_block_h = score_label.get_height() + 6 + score_surf.get_height()
+        if best_surf:
+            score_block_h += 10 + best_surf.get_height()
         total_h = title_surf.get_height() + GAP + score_block_h + self._LC_TITLE_BTN_GAP + self._LC_BTN_H
         title_y = SCREEN_HEIGHT // 2 - total_h // 2
 
         self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=title_y))
         sy = title_y + title_surf.get_height() + GAP
         self.screen.blit(score_label, score_label.get_rect(centerx=cx, top=sy))
-        self.screen.blit(score_surf,  score_surf.get_rect(centerx=cx, top=sy + score_label.get_height() + 6))
+        sy += score_label.get_height() + 6
+        self.screen.blit(score_surf, score_surf.get_rect(centerx=cx, top=sy))
+        sy += score_surf.get_height()
+        if best_surf:
+            sy += 10
+            self.screen.blit(best_surf, best_surf.get_rect(centerx=cx, top=sy))
+            sy += best_surf.get_height()
 
         # Recompute button y to sit below score block
         btn_y = title_y + title_surf.get_height() + GAP + score_block_h + self._LC_TITLE_BTN_GAP
@@ -1266,43 +1277,162 @@ class Renderer:
     # Records screen                                                       #
     # ------------------------------------------------------------------ #
 
-    # Column right-edges (for "r") or left-edges (for "l")
-    _COL_X      = (120, 220, 820, 1200, 1520, 1860)  # rank, #, Level, Score, Time, Date
-    _COL_LABELS = ("#",  "",   "LEVEL", "SCORE", "TIME", "DATE")
-    _COL_ALIGN  = ("r",  "l",  "l",     "r",     "r",    "r")
+    # Column right-edges (for "r") or left-edges (for "l") — used by all-runs tab
+    _COL_X      = (120, 220, 820, 1200, 1520, 1860)
     _ROW_H      = 62
-    _TABLE_TOP  = 200
+    _TABLE_TOP  = 230   # below tabs
+    # Tab bar geometry
+    _TAB_Y      = 140
+    _TAB_H      = 52
+    _TAB_W      = 340
+    _TAB_GAP    = 16
+
+    def _tab_rects(self) -> list[pygame.Rect]:
+        cx = SCREEN_WIDTH // 2
+        total_w = 3 * self._TAB_W + 2 * self._TAB_GAP
+        x0 = cx - total_w // 2
+        return [
+            pygame.Rect(x0,                              self._TAB_Y, self._TAB_W, self._TAB_H),
+            pygame.Rect(x0 + self._TAB_W + self._TAB_GAP, self._TAB_Y, self._TAB_W, self._TAB_H),
+            pygame.Rect(x0 + 2 * (self._TAB_W + self._TAB_GAP), self._TAB_Y, self._TAB_W, self._TAB_H),
+        ]
+
+    def records_tab_at(self, pos) -> "int | None":
+        for i, rect in enumerate(self._tab_rects()):
+            if rect.collidepoint(pos):
+                return i
+        return None
 
     def records_max_rows(self) -> int:
         div_y = self._TABLE_TOP + self.font_small.get_height() + 6
         hint_h = self.font_small.get_height() + 28
         return (SCREEN_HEIGHT - div_y - hint_h) // self._ROW_H
 
-    def draw_records(self, records: list, scroll: int = 0) -> None:
-        title = self.font_large.render("RECORDS", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 78)))
+    def _draw_records_tabs(self, active_tab: int) -> None:
+        tab_labels = ["BEST BY LEVEL", "ENDLESS", "ALL RUNS"]
+        rects = self._tab_rects()
+        for i, (rect, label) in enumerate(zip(rects, tab_labels)):
+            active = i == active_tab
+            bg     = (38, 38, 58) if active else (20, 20, 30)
+            border = HUD_COLOR if active else (60, 60, 80)
+            pygame.draw.rect(self.screen, bg, rect, border_radius=8)
+            pygame.draw.rect(self.screen, border, rect, 2, border_radius=8)
+            txt = self.font_small.render(label, True, HUD_COLOR if active else (120, 120, 140))
+            self.screen.blit(txt, txt.get_rect(center=rect.center))
 
-        if not records:
-            msg = self.font_med.render("No records yet — win a level to get started!", True, (160, 160, 160))
-            self.screen.blit(msg, msg.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)))
-            hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
-            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
-            return
-
-        max_rows = self.records_max_rows()
-        scroll = max(0, min(scroll, max(0, len(records) - max_rows)))
-        shown = records[scroll:scroll + max_rows]
-
-        # Subtitle
-        total = len(records)
-        end = scroll + len(shown)
-        sub_text = f"Showing {scroll + 1}–{end} of {total}  ·  sorted by score" if total > max_rows else f"Top {total} runs by score  ·  all levels"
-        sub = self.font_small.render(sub_text, True, (120, 120, 120))
-        self.screen.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, 150)))
-
-        # Header row
+    def _draw_records_grid(self, best_by_level: dict) -> None:
+        """Tab 0: one row per level, best score + best time."""
         header_y = self._TABLE_TOP
-        div_y = header_y + self.font_small.get_height() + 6
+        div_y    = header_y + self.font_small.get_height() + 6
+
+        # Column layout: Level | Best Score | Best Time | Date
+        COL_LEVEL = 200
+        COL_SCORE = 1100
+        COL_TIME  = 1560
+        COL_DATE  = 1870
+
+        for label, x, align in (
+            ("LEVEL", COL_LEVEL, "l"),
+            ("BEST SCORE", COL_SCORE, "r"),
+            ("BEST TIME", COL_TIME, "r"),
+            ("DATE", COL_DATE, "r"),
+        ):
+            surf = self.font_small.render(label, True, (180, 180, 100))
+            rect = surf.get_rect(y=header_y)
+            rect.right = x if align == "r" else rect.right
+            rect.left  = x if align == "l" else rect.left
+            self.screen.blit(surf, rect)
+
+        pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y), 1)
+
+        for row_i, cfg in enumerate(LEVELS):
+            y = div_y + 4 + row_i * self._ROW_H
+            shade = (22, 22, 30) if row_i % 2 == 0 else (0, 0, 0, 0)
+            pygame.draw.rect(self.screen, shade,
+                             pygame.Rect(40, y, SCREEN_WIDTH - 80, self._ROW_H - 2))
+            cy = y + (self._ROW_H - self.font_small.get_height()) // 2
+
+            best = best_by_level.get(cfg["name"])
+            color = HUD_COLOR if best else (80, 80, 100)
+
+            name_surf = self.font_small.render(cfg["name"], True, color)
+            self.screen.blit(name_surf, name_surf.get_rect(left=COL_LEVEL, y=cy))
+
+            if best:
+                score_surf = self.font_small.render(f"{best['score']:,}", True, (220, 190, 50))
+                self.screen.blit(score_surf, score_surf.get_rect(right=COL_SCORE, y=cy))
+
+                mins, secs = divmod(int(best["time"]), 60)
+                time_surf = self.font_small.render(f"{mins}:{secs:02d}", True, (120, 200, 255))
+                self.screen.blit(time_surf, time_surf.get_rect(right=COL_TIME, y=cy))
+
+                date_surf = self.font_small.render(best["date"], True, (140, 140, 140))
+                self.screen.blit(date_surf, date_surf.get_rect(right=COL_DATE, y=cy))
+            else:
+                no_surf = self.font_small.render("—", True, (60, 60, 80))
+                self.screen.blit(no_surf, no_surf.get_rect(right=COL_SCORE, y=cy))
+
+    def _draw_records_endless(self, best_by_endless: dict) -> None:
+        """Tab 1: one row per level slot, best endless score + time."""
+        header_y = self._TABLE_TOP
+        div_y    = header_y + self.font_small.get_height() + 6
+
+        COL_LEVEL = 200
+        COL_SCORE = 1100
+        COL_TIME  = 1560
+        COL_DATE  = 1870
+
+        for label, x, align in (
+            ("LEVEL", COL_LEVEL, "l"),
+            ("BEST SCORE", COL_SCORE, "r"),
+            ("BEST TIME", COL_TIME, "r"),
+            ("DATE", COL_DATE, "r"),
+        ):
+            surf = self.font_small.render(label, True, (180, 180, 100))
+            rect = surf.get_rect(y=header_y)
+            rect.right = x if align == "r" else rect.right
+            rect.left  = x if align == "l" else rect.left
+            self.screen.blit(surf, rect)
+
+        pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y), 1)
+
+        for row_i, cfg in enumerate(LEVELS):
+            endless_key = f"Endless (Lvl {row_i + 1})"
+            y = div_y + 4 + row_i * self._ROW_H
+            shade = (22, 22, 30) if row_i % 2 == 0 else (0, 0, 0, 0)
+            pygame.draw.rect(self.screen, shade,
+                             pygame.Rect(40, y, SCREEN_WIDTH - 80, self._ROW_H - 2))
+            cy = y + (self._ROW_H - self.font_small.get_height()) // 2
+
+            best = best_by_endless.get(endless_key)
+            color = HUD_COLOR if best else (80, 80, 100)
+
+            name_surf = self.font_small.render(cfg["name"], True, color)
+            self.screen.blit(name_surf, name_surf.get_rect(left=COL_LEVEL, y=cy))
+
+            if best:
+                score_surf = self.font_small.render(f"{best['score']:,}", True, (220, 190, 50))
+                self.screen.blit(score_surf, score_surf.get_rect(right=COL_SCORE, y=cy))
+
+                mins, secs = divmod(int(best["time"]), 60)
+                time_surf = self.font_small.render(f"{mins}:{secs:02d}", True, (120, 200, 255))
+                self.screen.blit(time_surf, time_surf.get_rect(right=COL_TIME, y=cy))
+
+                date_surf = self.font_small.render(best["date"], True, (140, 140, 140))
+                self.screen.blit(date_surf, date_surf.get_rect(right=COL_DATE, y=cy))
+            else:
+                no_surf = self.font_small.render("—", True, (60, 60, 80))
+                self.screen.blit(no_surf, no_surf.get_rect(right=COL_SCORE, y=cy))
+
+    def _draw_records_all(self, records: list, scroll: int) -> None:
+        """Tab 1: paginated list of all runs sorted by score."""
+        max_rows = self.records_max_rows()
+        scroll   = max(0, min(scroll, max(0, len(records) - max_rows)))
+        shown    = records[scroll:scroll + max_rows]
+
+        header_y = self._TABLE_TOP
+        div_y    = header_y + self.font_small.get_height() + 6
+
         col_labels = ("#", "LEVEL", "SCORE", "TIME", "DATE")
         col_x      = (self._COL_X[0], self._COL_X[2], self._COL_X[3], self._COL_X[4], self._COL_X[5])
         col_align  = ("r", "l", "r", "r", "r")
@@ -1315,29 +1445,21 @@ class Renderer:
 
         pygame.draw.line(self.screen, (80, 80, 80), (40, div_y), (SCREEN_WIDTH - 40, div_y), 1)
 
-        # Data rows
         for row_i, rec in enumerate(shown):
             y = div_y + 4 + row_i * self._ROW_H
             shade = (22, 22, 30) if row_i % 2 == 0 else (0, 0, 0, 0)
             pygame.draw.rect(self.screen, shade,
                              pygame.Rect(40, y, SCREEN_WIDTH - 80, self._ROW_H - 2))
 
-            is_top = row_i == 0
-            color  = (255, 220, 50) if is_top else HUD_COLOR
-
-            # Rank — medal colors for global top 3
             abs_rank = scroll + row_i
-            rank_color = {
-                0: (255, 215,  50),
-                1: (200, 200, 210),
-                2: (200, 130,  60),
-            }.get(abs_rank, (140, 140, 140))
+            rank_color = {0: (255, 215, 50), 1: (200, 200, 210), 2: (200, 130, 60)}.get(abs_rank, (140, 140, 140))
             rank_surf = self.font_small.render(f"{abs_rank + 1}", True, rank_color)
-            rank_rect = rank_surf.get_rect(right=self._COL_X[0], y=y + (self._ROW_H - rank_surf.get_height()) // 2)
-            self.screen.blit(rank_surf, rank_rect)
+            self.screen.blit(rank_surf, rank_surf.get_rect(
+                right=self._COL_X[0], y=y + (self._ROW_H - rank_surf.get_height()) // 2))
 
+            color = (255, 220, 50) if abs_rank == 0 else HUD_COLOR
             mins, secs = divmod(int(rec["time"]), 60)
-            cells = (rec["level"], str(rec["score"]), f"{mins}:{secs:02d}", rec["date"])
+            cells = (rec["level"], f"{rec['score']:,}", f"{mins}:{secs:02d}", rec["date"])
             cell_x     = (self._COL_X[2], self._COL_X[3], self._COL_X[4], self._COL_X[5])
             cell_align = ("l", "r", "r", "r")
             for cell, x, align in zip(cells, cell_x, cell_align):
@@ -1347,8 +1469,43 @@ class Renderer:
                 rect.left  = x if align == "l" else rect.left
                 self.screen.blit(surf, rect)
 
-        scroll_hint = "  ·  up/down or scroll to navigate" if len(records) > max_rows else ""
-        hint = self.font_small.render(f"ESC  ·  main menu{scroll_hint}", True, (120, 120, 120))
+        if len(records) > max_rows:
+            total = len(records)
+            end   = scroll + len(shown)
+            nav = self.font_small.render(
+                f"{scroll + 1}–{end} of {total}  ·  up/down or scroll to navigate",
+                True, (100, 100, 100))
+            self.screen.blit(nav, nav.get_rect(
+                centerx=SCREEN_WIDTH // 2, bottom=SCREEN_HEIGHT - 28 - self.font_small.get_height()))
+
+    def draw_records(self, records: list, scroll: int = 0, tab: int = 0,
+                     best_by_level: dict | None = None,
+                     endless_records: list | None = None,
+                     best_by_endless: dict | None = None) -> None:
+        title = self.font_large.render("RECORDS", True, HUD_COLOR)
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 78)))
+
+        self._draw_records_tabs(tab)
+
+        no_normal  = not records
+        no_endless = not endless_records
+        if no_normal and no_endless:
+            msg = self.font_med.render("No records yet — win a level to get started!", True, (160, 160, 160))
+            self.screen.blit(msg, msg.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)))
+            hint = self.font_small.render("ESC  ·  main menu", True, (120, 120, 120))
+            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
+            return
+
+        if tab == 0:
+            self._draw_records_grid(best_by_level or {})
+        elif tab == 1:
+            self._draw_records_endless(best_by_endless or {})
+        else:
+            self._draw_records_all(records, scroll)
+
+        scroll_hint = "  ·  up/down or scroll to navigate" if tab == 2 else ""
+        hint = self.font_small.render(
+            f"ESC  ·  main menu    left/right — switch tabs{scroll_hint}", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #

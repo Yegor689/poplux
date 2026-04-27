@@ -139,9 +139,8 @@ class Chain:
                         break
                 if not has_gap_ahead:
                     for j in range(i + 1, len(self.balls)):
-                        if j > i + 1:
-                            if self.balls[j].path_distance - self.balls[j - 1].path_distance > _GAP_THRESHOLD:
-                                break
+                        if self.balls[j].path_distance - self.balls[j - 1].path_distance > _GAP_THRESHOLD:
+                            break
                         self.balls[j].path_distance += push
             if b.entry_t < 1.0:
                 b.entry_t = min(1.0, b.entry_t + _ENTRY_SPEED * dt)
@@ -203,33 +202,41 @@ class Chain:
                         if orig_gap > _GAP_THRESHOLD:
                             seg_start = k + 1
                             break
-                    old_pos = self.balls[i].path_distance
+                    # Anchor ball i flush behind ball i+1, pack rear segment backward.
                     self.balls[i].path_distance = self.balls[i + 1].path_distance - BALL_DIAMETER
-                    snap_amount = self.balls[i].path_distance - old_pos
-                    for k in range(seg_start, i):
-                        self.balls[k].path_distance += snap_amount
-                    # Re-pack rear segment (descending from i)
                     for k in range(i - 1, seg_start - 1, -1):
-                        expected = self.balls[k + 1].path_distance - BALL_DIAMETER
-                        if abs(self.balls[k].path_distance - expected) > 0.5:
-                            self.balls[k].path_distance = expected
+                        self.balls[k].path_distance = self.balls[k + 1].path_distance - BALL_DIAMETER
                 else:
-                    # Matching join: snap front segment, stop at next open gap.
-                    # Find the segment end using pre-shift gaps.
+                    # Matching join: place ball i+1 exactly one diameter ahead
+                    # of ball i, then pack the entire merged segment outward.
+
+                    # Find how far the front segment extends (next real open gap).
                     seg_end = len(self.balls)
                     for j in range(i + 1, len(self.balls) - 1):
                         fwd_gap = self.balls[j + 1].path_distance - self.balls[j].path_distance
                         if fwd_gap > _GAP_THRESHOLD:
                             seg_end = j + 1
                             break
-                    snap_delta = (self.balls[i].path_distance + BALL_DIAMETER) - self.balls[i + 1].path_distance
-                    for j in range(i + 1, seg_end):
-                        self.balls[j].path_distance += snap_delta
-                    # Re-pack: enforce exact spacing within segment
+
+                    # Find how far the rear segment extends backward (prev real open gap).
+                    seg_start = 0
+                    for k in range(i - 1, -1, -1):
+                        back_gap = self.balls[k + 1].path_distance - self.balls[k].path_distance
+                        if back_gap > _GAP_THRESHOLD:
+                            seg_start = k + 1
+                            break
+
+                    # Anchor: place ball i+1 flush against ball i.
+                    self.balls[i + 1].path_distance = self.balls[i].path_distance + BALL_DIAMETER
+
+                    # Pack forward from the join point.
                     for j in range(i + 1, seg_end - 1):
-                        expected = self.balls[j].path_distance + BALL_DIAMETER
-                        if abs(self.balls[j + 1].path_distance - expected) > 0.5:
-                            self.balls[j + 1].path_distance = expected
+                        self.balls[j + 1].path_distance = self.balls[j].path_distance + BALL_DIAMETER
+
+                    # Pack backward from the join point (rear segment must also be flush).
+                    for j in range(i, seg_start, -1):
+                        self.balls[j - 1].path_distance = self.balls[j].path_distance - BALL_DIAMETER
+
                     matches = self.check_matches(i)
                     if len(matches) < MATCH_MINIMUM:
                         matches = self.check_matches(i + 1)
