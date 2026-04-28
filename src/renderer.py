@@ -569,18 +569,19 @@ class Renderer:
             self.screen.blit(balls_label, balls_label.get_rect(centerx=bx + box_w // 2, top=by + pad_y))
             self.screen.blit(balls_value, balls_value.get_rect(centerx=bx + box_w // 2, top=by + pad_y + balls_label.get_height() + 4))
 
-    def _lose_button_rects(self) -> list:
+    def _lose_button_rects(self, new_best: bool = False) -> list:
         """Retry and Main Menu button rects — must match draw_lose geometry."""
         GAP_S, GAP_L = 18, 36
         btn_w, btn_h = 340, 78
         btns_w = btn_w * 2 + GAP_L
-        # Approximate total_h (same calc as draw_lose, using font metrics)
         stats_h = max(
             self.font_small.get_height() + GAP_S + self.font_score.get_height(),
             self.font_small.get_height() + GAP_S + self.font_score.get_height(),
         )
+        best_h = (self.font_small.get_height() + GAP_S) if new_best else 0
         total_h = (self.font_large.get_height() + GAP_L
                    + self.font_med.get_height()   + GAP_L
+                   + best_h
                    + 1 + GAP_L + stats_h + GAP_L
                    + 1 + GAP_L + btn_h + GAP_S
                    + self.font_small.get_height())
@@ -588,20 +589,22 @@ class Renderer:
         btn_y = (SCREEN_HEIGHT // 2 - total_h // 2
                  + self.font_large.get_height() + GAP_L
                  + self.font_med.get_height()   + GAP_L
+                 + best_h
                  + 1 + GAP_L + stats_h + GAP_L + 1 + GAP_L)
         return [
             pygame.Rect(cx - btns_w // 2, btn_y, btn_w, btn_h),
             pygame.Rect(cx - btns_w // 2 + btn_w + GAP_L, btn_y, btn_w, btn_h),
         ]
 
-    def lose_button_at(self, pos) -> "int | None":
-        for i, rect in enumerate(self._lose_button_rects()):
+    def lose_button_at(self, pos, new_best: bool = False) -> "int | None":
+        for i, rect in enumerate(self._lose_button_rects(new_best)):
             if rect.collidepoint(pos):
                 return i
         return None
 
     def draw_lose(self, mouse_pos, score: int, elapsed_time: float,
-                  is_endless: bool = False, overlay_alpha: int = 200) -> None:
+                  is_endless: bool = False, overlay_alpha: int = 200,
+                  new_best: bool = False) -> None:
         overlay = self._overlay_surf
         overlay.fill((0, 0, 0, min(overlay_alpha, 200)))
         self.screen.blit(overlay, (0, 0))
@@ -614,6 +617,7 @@ class Renderer:
         title_surf = self.font_large.render("GAME OVER", True, (220, 60, 60))
         sub_text   = "Endless run ended" if is_endless else "The chain reached the hole"
         sub_surf   = self.font_med.render(sub_text, True, (180, 120, 120))
+        best_surf  = self.font_small.render("NEW BEST!", True, (255, 220, 50)) if new_best else None
 
         mins, secs = int(elapsed_time) // 60, int(elapsed_time) % 60
         score_label = self.font_small.render("SCORE",    True, (150, 150, 150))
@@ -631,6 +635,7 @@ class Renderer:
         btns_w  = btn_w * 2 + GAP_L
         total_h = (title_surf.get_height() + GAP_L
                    + sub_surf.get_height()  + GAP_L
+                   + (best_surf.get_height() + GAP_S if best_surf else 0)
                    + 1 + GAP_L
                    + stats_h               + GAP_L
                    + 1 + GAP_L
@@ -642,7 +647,10 @@ class Renderer:
         y += title_surf.get_height() + GAP_L
 
         self.screen.blit(sub_surf, sub_surf.get_rect(centerx=cx, top=y))
-        y += sub_surf.get_height() + GAP_L
+        y += sub_surf.get_height() + (GAP_S if best_surf else GAP_L)
+        if best_surf:
+            self.screen.blit(best_surf, best_surf.get_rect(centerx=cx, top=y))
+            y += best_surf.get_height() + GAP_L
 
         pygame.draw.line(self.screen, (80, 40, 40), (cx - DIV_W // 2, y), (cx + DIV_W // 2, y), 1)
         y += 1 + GAP_L
@@ -739,7 +747,8 @@ class Renderer:
 
     def draw_level_select(self, mouse_pos, selected_idx: int = 0,
                           best_scores: dict | None = None, scroll: int = 0,
-                          max_unlocked: int = 0, all_unlocked: bool = False) -> None:
+                          max_unlocked: int = 0, all_unlocked: bool = False,
+                          best_endless: dict | None = None) -> None:
         title = self.font_large.render("SELECT LEVEL", True, HUD_COLOR)
         self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 96)))
 
@@ -851,14 +860,27 @@ class Renderer:
             pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, sy), (dx + dw - 20, sy), 1)
             sy += 20
 
-            if best:
-                mins, secs = divmod(int(best["time"]), 60)
-                rec_label = self.font_small.render("BEST RUN", True, (100, 100, 120))
-                rec_score = self.font_med.render(f"{best['score']:,}", True, (255, 215, 50))
-                rec_time  = self.font_small.render(f"{mins}:{secs:02d}", True, (180, 200, 180))
-                self.screen.blit(rec_label, rec_label.get_rect(center=(dcx, sy)))
-                self.screen.blit(rec_score, rec_score.get_rect(center=(dcx, sy + rec_label.get_height() + 4)))
-                self.screen.blit(rec_time,  rec_time.get_rect(center=(dcx, sy + rec_label.get_height() + rec_score.get_height() + 8)))
+            endless_key = f"Endless (Lvl {selected_idx + 1})"
+            best_end = (best_endless or {}).get(endless_key)
+
+            if best or best_end:
+                col_gap = dw // 2
+                entries = []
+                if best:
+                    mins, secs = divmod(int(best["time"]), 60)
+                    entries.append(("BEST RUN", f"{best['score']:,}", f"{mins}:{secs:02d}",
+                                    (255, 215, 50), dcx - col_gap // 2 if best_end else dcx))
+                if best_end:
+                    mins, secs = divmod(int(best_end["time"]), 60)
+                    entries.append(("BEST ENDLESS", f"{best_end['score']:,}", f"{mins}:{secs:02d}",
+                                    (190, 100, 255), dcx + col_gap // 2 if best else dcx))
+                for label_str, score_str, time_str, score_col, ex in entries:
+                    lbl = self.font_small.render(label_str, True, (100, 100, 120))
+                    scr = self.font_med.render(score_str, True, score_col)
+                    tim = self.font_small.render(time_str, True, (180, 200, 180))
+                    self.screen.blit(lbl, lbl.get_rect(center=(ex, sy)))
+                    self.screen.blit(scr, scr.get_rect(center=(ex, sy + lbl.get_height() + 4)))
+                    self.screen.blit(tim, tim.get_rect(center=(ex, sy + lbl.get_height() + scr.get_height() + 8)))
             else:
                 no_surf = self.font_small.render("No record yet", True, (80, 80, 100))
                 self.screen.blit(no_surf, no_surf.get_rect(center=(dcx, sy + 20)))
@@ -997,7 +1019,7 @@ class Renderer:
     _PAUSE_BTN_W = 640
     _PAUSE_BTN_H = 108
     _PAUSE_BTN_GAP = 28
-    _PAUSE_LABELS = ["RESUME", "RESTART", "MAIN MENU"]
+    _PAUSE_LABELS = ["RESUME", "RESTART", "SETTINGS", "MAIN MENU"]
 
     def _pause_button_rects(self) -> list:
         n = len(self._PAUSE_LABELS)
@@ -1023,7 +1045,7 @@ class Renderer:
 
         cx = SCREEN_WIDTH // 2
         title = self.font_large.render("PAUSED", True, HUD_COLOR)
-        self.screen.blit(title, title.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 280)))
+        self.screen.blit(title, title.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 340)))
 
         if level_name:
             name_surf = self.font_small.render(level_name, True, (140, 140, 160))
@@ -1031,8 +1053,8 @@ class Renderer:
         score_surf = self.font_med.render(f"Score  {score:,}", True, (200, 190, 80))
         self.screen.blit(score_surf, score_surf.get_rect(center=(cx, SCREEN_HEIGHT // 2 - 160)))
 
-        colors      = [(35, 80, 35), (80, 60, 25), (80, 30, 30)]
-        hover_colors = [(55, 130, 55), (130, 100, 40), (130, 50, 50)]
+        colors      = [(35, 80, 35), (80, 60, 25), (35, 55, 90), (80, 30, 30)]
+        hover_colors = [(55, 130, 55), (130, 100, 40), (55, 90, 140), (130, 50, 50)]
         for i, (rect, label) in enumerate(zip(self._pause_button_rects(), self._PAUSE_LABELS)):
             hovered = rect.collidepoint(mouse_pos)
             fill   = hover_colors[i] if hovered else colors[i]
@@ -1043,7 +1065,8 @@ class Renderer:
             self.screen.blit(txt, txt.get_rect(center=rect.center))
 
         hint = self.font_small.render("Space / ESC to resume", True, (120, 120, 120))
-        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 256)))
+        last_btn = self._pause_button_rects()[-1]
+        self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, last_btn.bottom + 28)))
 
     # ------------------------------------------------------------------ #
     # Level-complete overlay                                               #
@@ -1126,7 +1149,7 @@ class Renderer:
             txt = self.font_small.render(label, True, HUD_COLOR)
             self.screen.blit(txt, txt.get_rect(center=rect.center))
 
-        hint = self.font_small.render("Enter / Space — next level    R — restart", True, (120, 120, 120))
+        hint = self.font_small.render("Enter / Space — next level    R — restart    M — menu", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(centerx=SCREEN_WIDTH // 2, top=rects[0].bottom + 24))
 
     # ------------------------------------------------------------------ #

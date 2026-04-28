@@ -13,25 +13,33 @@ Aim and shoot colored balls from your ship to match 3 or more in a row — clear
 | **Left-click** | Shoot |
 | **Right-click** | Swap current / next ball |
 | **ESC** | Pause / back |
-| **S** (in-game) | Toggle debug HUD |
+| **Space** | Resume from pause |
+| **R** | Retry (on pause, lose, or level complete screens) |
+| **M** | Main menu (on level complete screen) |
 | **S** (main menu) | Open cheat code menu |
 
 ---
 
 ## Features
 
-- 6 levels with distinct paths: spiral, serpentine, winding, zigzag, double loop, vortex
+- 8 levels with distinct paths: spiral, serpentine, scramble, zigzag, twin coils, vortex, infinity, labyrinth
+- Endless mode per level — chain speed ramps up over time, no ball limit
 - Smooth Catmull-Rom spline paths with arc-length parameterization
 - Ball chain with gap-closing, cascade pops, and insertion animations
 - Rolling ball visuals with synchronized rotation band effect
-- Particle bursts on every pop
+- Particle bursts on every pop, screen shake on cascades
 - Synthesized sound effects (no audio files required) + streamed background music
 - Special balls: **Bonus** (slowdown), **Bomb** (blast radius), **Rainbow** (auto-match)
 - Collectibles: **Coins** (+10 pts) and **Aim Line** powerups
-- Per-level best score and time records
-- Settings menu: music volume slider and colorblind mode (per-ball symbols)
+- Records screen with three tabs: Best by Level / Best Endless / All Runs
+- "NEW BEST!" banner on level complete and endless game over when a record is beaten
+- Settings: music volume, SFX volume, fullscreen toggle, colorblind mode, FPS display, danger vignette, particles
+- Settings accessible from both main menu and pause menu
+- Danger heartbeat sound and red vignette pulse as the chain approaches the hole
+- Animated score counter with combo multiplier popups
 - Cheat code menu (press S on main menu)
-- Fullscreen at 1920×1080 (16:9)
+- Procedural animated asteroid background
+- Fullscreen at 1920×1080 logical resolution, letterboxed to any display size
 
 ---
 
@@ -64,8 +72,9 @@ Access from the main menu (press S), then type a code and press Enter.
 ## Requirements
 
 - Python 3.10+
-- Pygame 2.x
-- NumPy (for synthesized sound)
+- Pygame 2.6+
+- NumPy 2.0+
+- platformdirs 4.0+
 
 ```bash
 pip install -r requirements.txt
@@ -91,31 +100,34 @@ python src/editor.py src/levels/level1.json   # load existing level
 ## Project Structure
 
 ```
-poplux/
+Zuma/
 ├── README.md
 ├── DESIGN.md
 ├── requirements.txt
-├── ASSETS/             # music tracks (MENU, IN-GAME, FINISH .mp3) + fonts (Orbitron, Exo2) + sprite strips
+├── settings.json           # persisted user settings (created on first run)
+├── ASSETS/                 # music tracks (MENU, IN-GAME, FINISH .mp3) + fonts
 └── src/
-    ├── main.py         # entry point
-    ├── settings.py     # constants and level loader
-    ├── game.py         # game loop and state machine
-    ├── path.py         # spline path with arc-length parameterization
-    ├── frog.py         # shooter logic
-    ├── ball.py         # ball, coin, particle, and powerup data classes
-    ├── chain.py        # ball chain: movement, insertion, matching, cascades
-    ├── renderer.py     # all drawing code
-    ├── sounds.py       # synthesized SFX and music management
-    ├── records.py      # per-level score/time persistence
-    ├── background.py   # starfield and asteroid background
-    ├── editor.py       # interactive level editor
+    ├── main.py             # entry point
+    ├── settings.py         # constants, level loader, SETTINGS singleton
+    ├── game.py             # game loop and state machine
+    ├── path.py             # spline path with arc-length parameterization
+    ├── frog.py             # shooter logic
+    ├── ball.py             # ball, coin, particle, and powerup data classes
+    ├── chain.py            # ball chain: movement, insertion, matching, cascades
+    ├── renderer.py         # all drawing code
+    ├── sounds.py           # synthesized SFX and music management
+    ├── records.py          # per-level score/time persistence (platformdirs)
+    ├── background.py       # procedural starfield and asteroid background
+    ├── editor.py           # interactive level editor
     └── levels/
-        ├── level1.json
-        ├── level2.json
-        ├── level3.json
-        ├── level4.json
-        ├── level5.json
-        └── level6.json
+        ├── level1.json     # The Spiral
+        ├── level2.json     # The Snake
+        ├── level3.json     # The Scramble
+        ├── level4.json     # Zigzag
+        ├── level5.json     # Twin Coils
+        ├── level6.json     # The Vortex
+        ├── level7.json     # Infinity
+        └── level8.json     # The Labyrinth
 ```
 
 ---

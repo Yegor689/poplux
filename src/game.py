@@ -29,6 +29,7 @@ class Game:
         self._records_scroll = 0
         self._records_tab = 0  # 0 = per-level grid, 1 = all runs
         self._level_complete_new_best = False
+        self._endless_new_best = False
         self._level_select_idx = 0
         self._ls_scroll = 0
         self._ls_hover_suppressed = False
@@ -47,6 +48,7 @@ class Game:
         self._frame_mouse = (0, 0)
         self.background = Background()
         self._pre_pause_state = "playing"  # state to restore when unpausing
+        self._settings_return_state = "main_menu"  # state to restore when leaving settings
         self._overlay_t: float = 1.0        # 0→1 fade-in for overlays; 1.0 = fully faded in
         self.active_cheats: set = set()
         self._cheat_input: str = ""
@@ -291,6 +293,8 @@ class Game:
                         self._set_state("paused")
                     elif self.state == "paused":
                         self.state = self._pre_pause_state
+                    elif self.state == "settings":
+                        self.state = self._settings_return_state
                     else:
                         self.state = "main_menu"
                 # Space resumes from pause (item 1)
@@ -326,6 +330,8 @@ class Game:
                 if self.state == "level_complete":
                     if event.key == pygame.K_r:
                         self._init_game_state(self.current_level_idx)
+                    elif event.key == pygame.K_m:
+                        self.state = "main_menu"
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                         if self.current_level_idx + 1 < len(LEVELS):
                             self._init_game_state(self.current_level_idx + 1)
@@ -374,6 +380,7 @@ class Game:
                         self._records_scroll = 0
                         self._records_tab = 0
                     elif btn == 3:
+                        self._settings_return_state = "main_menu"
                         self.state = "settings"
                     elif btn == 4:
                         return False
@@ -432,9 +439,12 @@ class Game:
                         else:
                             self._init_game_state(self.current_level_idx)
                     elif btn == 2:
+                        self._settings_return_state = "paused"
+                        self.state = "settings"
+                    elif btn == 3:
                         self.state = "main_menu"
                 elif self.state == "lose":
-                    btn = self.renderer.lose_button_at(mouse_pos)
+                    btn = self.renderer.lose_button_at(mouse_pos, new_best=self._endless_new_best)
                     if btn == 0:  # retry
                         if self._endless_mode:
                             self._init_endless_mode(self.current_level_idx)
@@ -687,7 +697,11 @@ class Game:
             elif self.chain.front_distance() >= self.path.total_length:
                 if self._endless_mode:
                     endless_key = f"Endless (Lvl {self.current_level_idx + 1})"
+                    prev = records_store.best_by_endless().get(endless_key)
+                    self._endless_new_best = prev is None or self.score > prev["score"]
                     records_store.save(endless_key, self.score, self.elapsed_time)
+                else:
+                    self._endless_new_best = False
                 sounds.play("game_over", 0.5)
                 self._set_state("lose")
 
@@ -817,7 +831,7 @@ class Game:
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
             _ls_mouse = (-1, -1) if self._ls_hover_suppressed else mouse_pos
-            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll, self._max_unlocked(), self._all_unlocked)
+            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll, self._max_unlocked(), self._all_unlocked, best_endless=records_store.best_by_endless())
         elif self.state == "records":
             self.renderer.draw_records(records_store.top(), self._records_scroll,
                                        tab=self._records_tab,
@@ -862,7 +876,8 @@ class Game:
                 self.renderer.draw_game_complete(mouse_pos, self.score, self.elapsed_time, overlay_alpha=_ov_alpha)
             elif self.state == "lose":
                 self.renderer.draw_lose(mouse_pos, self.score, self.elapsed_time,
-                                        is_endless=self._endless_mode, overlay_alpha=_ov_alpha)
+                                        is_endless=self._endless_mode, overlay_alpha=_ov_alpha,
+                                        new_best=self._endless_new_best)
 
         scale, ox, oy, scaled_w, scaled_h = self._scale_rect()
         scaled = pygame.transform.smoothscale(self._logical, (scaled_w, scaled_h))
