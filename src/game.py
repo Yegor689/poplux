@@ -31,7 +31,8 @@ class Game:
         self._level_complete_new_best = False
         self._endless_new_best = False
         self._level_select_idx = 0
-        self._ls_scroll = 0
+        self._ls_scroll = 0.0        # current scroll (float for smooth lerp)
+        self._ls_scroll_target = 0   # target scroll position
         self._ls_hover_suppressed = False
         self._all_unlocked: bool = False  # F9 in level_select: unlock all levels
         self.current_level_idx = 0
@@ -176,19 +177,19 @@ class Game:
 
     def _ls_scroll_to(self, idx: int) -> None:
         """Ensure the selected level row is visible in the list."""
-        row_h   = self.renderer._LS_ROW_H + self.renderer._LS_ROW_GAP
-        list_h  = self.renderer.screen.get_height() - self.renderer._LS_LIST_TOP - 20
-        top     = idx * row_h
-        bottom  = top + self.renderer._LS_ROW_H
-        if top < self._ls_scroll:
-            self._ls_scroll = top
-        elif bottom > self._ls_scroll + list_h:
-            self._ls_scroll = bottom - list_h
+        row_h  = self.renderer._LS_ROW_H + self.renderer._LS_ROW_GAP
+        list_h = SCREEN_HEIGHT - self.renderer._LS_LIST_TOP - 20
+        top    = idx * row_h
+        bottom = top + self.renderer._LS_ROW_H
+        if top < self._ls_scroll_target:
+            self._ls_scroll_target = top
+        elif bottom > self._ls_scroll_target + list_h:
+            self._ls_scroll_target = bottom - list_h
 
     def _update_music(self) -> None:
         if self.state in ("level_complete", "game_complete"):
             track = self._music_finish
-        elif self.state in ("playing", "combo_test", "lose"):
+        elif self.state in ("playing", "combo_test", "lose", "paused"):
             track = self._music_ingame
         else:
             track = self._music_menu
@@ -222,6 +223,8 @@ class Game:
                 self._overlay_t = min(1.0, self._overlay_t + dt / self._OVERLAY_FADE_DUR)
             if self.state in ("playing", "combo_test"):
                 self._update(dt)
+            if self.state == "level_select":
+                self._ls_scroll += (self._ls_scroll_target - self._ls_scroll) * min(1.0, dt * 18)
             self._update_music()
             self._render()
         pygame.quit()
@@ -373,7 +376,8 @@ class Game:
                         self._init_game_state(0)
                     elif btn == 1:
                         self.state = "level_select"
-                        self._ls_scroll = 0
+                        self._ls_scroll = 0.0
+                        self._ls_scroll_target = 0
                         self._ls_scroll_to(self._level_select_idx)
                     elif btn == 2:
                         self.state = "records"
@@ -385,7 +389,7 @@ class Game:
                     elif btn == 4:
                         return False
                 elif self.state == "level_select":
-                    action = self.renderer.level_select_interact(mouse_pos, self._level_select_idx, self._ls_scroll)
+                    action = self.renderer.level_select_interact(mouse_pos, int(self._ls_scroll))
                     _locked = self._level_select_idx > self._max_unlocked()
                     if action == "play" and not _locked:
                         sounds.play("menu_click", 0.4)
@@ -831,7 +835,7 @@ class Game:
             self.renderer.draw_cheat_menu(self.active_cheats, self._cheat_input, self._cheat_message)
         elif self.state == "level_select":
             _ls_mouse = (-1, -1) if self._ls_hover_suppressed else mouse_pos
-            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), self._ls_scroll, self._max_unlocked(), self._all_unlocked, best_endless=records_store.best_by_endless())
+            self.renderer.draw_level_select(_ls_mouse, self._level_select_idx, records_store.best_by_level(), int(self._ls_scroll), self._max_unlocked(), self._all_unlocked, best_endless=records_store.best_by_endless())
         elif self.state == "records":
             self.renderer.draw_records(records_store.top(), self._records_scroll,
                                        tab=self._records_tab,

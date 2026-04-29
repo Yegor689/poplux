@@ -3,7 +3,7 @@ import os
 import pygame
 import pygame.gfxdraw
 from settings import (
-    BALL_COLORS, HOLE_COLOR, HUD_COLOR, BALL_RADIUS, LEVELS,
+    BALL_COLORS, HUD_COLOR, BALL_RADIUS, LEVELS,
     SCREEN_WIDTH, SCREEN_HEIGHT, SETTINGS,
 )
 
@@ -19,6 +19,7 @@ class Renderer:
         self.font_large    = pygame.font.Font(_FONT_ORBITRON, 112)
         self.font_med      = pygame.font.Font(_FONT_EXO2, 58)
         self.font_small    = pygame.font.Font(_FONT_EXO2, 42)
+        self.font_xsmall   = pygame.font.Font(_FONT_EXO2, 32)
         self.font_score    = pygame.font.Font(_FONT_ORBITRON, 76)
         self.font_icon_lg  = pygame.font.Font(_FONT_SYMBOLS, 72)
         self.font_icon_sm  = pygame.font.Font(_FONT_SYMBOLS, 44)
@@ -31,7 +32,7 @@ class Renderer:
         self._aim_line_surf = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         self._overlay_surf  = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         self._vign_surf     = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        self._vign_base_alpha: "np.ndarray | None" = None  # baked once on first use
+        self._vign_base_alpha = None  # np.ndarray | None, baked once on first use
 
     @staticmethod
     def _build_palettes() -> dict:
@@ -388,6 +389,10 @@ class Renderer:
             pygame.draw.aaline(self.screen, AMBER2,
                                pt(R * 0.0, sign * R * 0.72),
                                pt(-R * 0.85, sign * R * 0.65))
+            # wing tip navigation dot
+            wx, wy = pt(-R * 0.38, sign * R * 1.68)
+            self._aa_circle(self.screen, (200, 220, 255), (wx, wy), int(R * 0.09))
+            pygame.gfxdraw.aacircle(self.screen, wx, wy, int(R * 0.09), (255, 255, 255))
 
         # --- Rounded hull body ---
         self._aa_circle(self.screen, HULL,  pt( R * 0.65, 0), int(R * 0.92))
@@ -415,6 +420,12 @@ class Renderer:
                   pt(R * 2.5,  -R * 0.09), pt(R * 1.22, -R * 0.13)]
         pygame.draw.polygon(self.screen, PANEL, barrel)
         pygame.gfxdraw.aapolygon(self.screen, barrel, AMBER)
+        # barrel top highlight — makes it look cylindrical
+        pygame.draw.aaline(self.screen, (90, 105, 130),
+                           pt(R * 1.3, -R * 0.06), pt(R * 2.45, -R * 0.04))
+        # muzzle cap — finished barrel end
+        self._aa_circle(self.screen, SPINE, pt(R * 2.5, 0), int(R * 0.13))
+        pygame.gfxdraw.aacircle(self.screen, *pt(R * 2.5, 0), int(R * 0.13), AMBER)
 
         # --- Visor (flat viewport slit, NOT ball-shaped) ---
         visor = [pt(R * 0.9,  R * 0.28), pt(R * 0.3,  R * 0.28),
@@ -441,7 +452,7 @@ class Renderer:
             self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
 
         # --- Current ball at cannon tip ---
-        mx, my = pt(R * 2.5 + BALL_RADIUS + 3, 0)
+        mx, my = pt(R * 2.5 + BALL_RADIUS + 1, 0)
         if frog.current_ball.is_bomb:
             self._draw_bomb_ball(self.screen, mx, my, frog.current_ball.radius)
         elif frog.current_ball.is_rainbow:
@@ -701,8 +712,8 @@ class Renderer:
     _LS_LIST_X     = 80
     _LS_LIST_W     = 560
     _LS_LIST_TOP   = 170
-    _LS_ROW_H      = 130
-    _LS_ROW_GAP    = 8
+    _LS_ROW_H      = 100
+    _LS_ROW_GAP    = 6
     # Right panel: detail area
     _LS_DETAIL_X   = 720
     _LS_DETAIL_W   = SCREEN_WIDTH - 720 - 80
@@ -734,7 +745,7 @@ class Renderer:
                            SCREEN_HEIGHT - self._LS_BTN_H - 60,
                            self._LS_BTN_W, self._LS_BTN_H)
 
-    def level_select_interact(self, pos, selected_idx: int, scroll: int = 0) -> "int | str | None":
+    def level_select_interact(self, pos, scroll: int = 0) -> "int | str | None":
         """Returns level index if a list row clicked, 'play'/'endless' if buttons clicked."""
         if self._ls_play_rect().collidepoint(pos):
             return "play"
@@ -784,36 +795,36 @@ class Renderer:
 
             # Level number badge
             num_col = (60, 60, 80) if locked else ((140, 160, 255) if selected else (80, 80, 110))
-            num_surf = self.font_med.render(f"{i + 1:02d}", True, num_col)
+            num_surf = self.font_small.render(f"{i + 1:02d}", True, num_col)
             self.screen.blit(num_surf, num_surf.get_rect(midleft=(rect.x + 16, rect.centery)))
 
             if locked:
                 # Lock icon + "LOCKED" text
-                lock_surf = self.font_small.render("LOCKED", True, (55, 55, 70))
-                self.screen.blit(lock_surf, lock_surf.get_rect(midleft=(rect.x + 90, rect.centery)))
+                lock_surf = self.font_xsmall.render("LOCKED", True, (55, 55, 70))
+                self.screen.blit(lock_surf, lock_surf.get_rect(midleft=(rect.x + 80, rect.centery)))
             else:
                 # Best score on the right
                 best = (best_scores or {}).get(cfg["name"])
                 score_x = rect.right - 16
                 if best:
-                    sc_surf = self.font_small.render(f"{best['score']:,}", True, (220, 190, 50))
+                    sc_surf = self.font_xsmall.render(f"{best['score']:,}", True, (220, 190, 50))
                     self.screen.blit(sc_surf, sc_surf.get_rect(midright=(score_x, rect.centery)))
                     score_x = rect.right - sc_surf.get_width() - 24
 
                 text_right = score_x - 12
-                text_x = rect.x + 90
+                text_x = rect.x + 80
                 max_text_w = text_right - text_x
 
-                name_surf = self.font_med.render(cfg["name"], True, HUD_COLOR)
+                name_surf = self.font_small.render(cfg["name"], True, HUD_COLOR)
                 self.screen.blit(name_surf, name_surf.get_rect(
                     midleft=(text_x, rect.centery - name_surf.get_height() // 2 - 1)))
                 sub = cfg.get("subtitle", "")
                 if sub:
-                    sub_surf = self.font_small.render(sub, True, (130, 130, 150))
+                    sub_surf = self.font_xsmall.render(sub, True, (130, 130, 150))
                     if sub_surf.get_width() > max_text_w:
                         sub_surf = pygame.transform.smoothscale(sub_surf, (max_text_w, sub_surf.get_height()))
                     self.screen.blit(sub_surf, sub_surf.get_rect(
-                        midleft=(text_x, rect.centery + name_surf.get_height() // 2 + 1)))
+                        midleft=(text_x, rect.centery + name_surf.get_height() // 2 + 2)))
 
         self.screen.set_clip(None)
 
@@ -823,7 +834,7 @@ class Renderer:
         best   = (best_scores or {}).get(cfg["name"])
         dx     = self._LS_DETAIL_X
         dw     = self._LS_DETAIL_W
-        dcx    = dx + dw // 2
+        dcx    = (dx + 20 + dx + dw - 20) // 2  # centre of the separator span
 
         name_col  = (90, 90, 110) if locked else HUD_COLOR
         name_surf = self.font_large.render(cfg["name"], True, name_col)
@@ -835,21 +846,21 @@ class Renderer:
             max_w = dw - 40
             if sub_surf.get_width() > max_w:
                 sub_surf = pygame.transform.smoothscale(sub_surf, (max_w, sub_surf.get_height()))
-            self.screen.blit(sub_surf, sub_surf.get_rect(center=(dcx, 300)))
+            self.screen.blit(sub_surf, sub_surf.get_rect(center=(dcx, 320)))
 
-        pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, 340), (dx + dw - 20, 340), 1)
+        pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, 362), (dx + dw - 20, 362), 1)
 
         if locked:
             lock_big = self.font_large.render("LOCKED", True, (60, 60, 80))
-            self.screen.blit(lock_big, lock_big.get_rect(center=(dcx, 500)))
+            self.screen.blit(lock_big, lock_big.get_rect(center=(dcx, 520)))
             hint2 = self.font_small.render("Complete the previous level to unlock", True, (70, 70, 90))
-            self.screen.blit(hint2, hint2.get_rect(center=(dcx, 580)))
+            self.screen.blit(hint2, hint2.get_rect(center=(dcx, 600)))
         else:
             stats = [
                 ("BALLS",  f"{cfg['total_balls']}",           (160, 200, 160)),
                 ("SPEED",  f"{int(cfg['chain_speed'])} px/s", (180, 150, 210)),
             ]
-            sy = 380
+            sy = 400
             for label, value, col in stats:
                 lbl = self.font_small.render(label, True, (100, 100, 120))
                 val = self.font_med.render(value, True, col)
@@ -858,7 +869,7 @@ class Renderer:
                 sy += lbl.get_height() + val.get_height() + 24
 
             pygame.draw.line(self.screen, (60, 60, 80), (dx + 20, sy), (dx + dw - 20, sy), 1)
-            sy += 20
+            sy += 36
 
             endless_key = f"Endless (Lvl {selected_idx + 1})"
             best_end = (best_endless or {}).get(endless_key)
@@ -916,9 +927,9 @@ class Renderer:
     # ------------------------------------------------------------------ #
 
     _MENU_BTN_W      = 700
-    _MENU_BTN_H      = 90
-    _MENU_BTN_H_PLAY = 130
-    _MENU_BTN_GAP    = 36
+    _MENU_BTN_H      = 108
+    _MENU_BTN_H_PLAY = 148
+    _MENU_BTN_GAP    = 22
     # (label, icon, fill, fill_hover, border, border_hover)
     _MENU_BTNS = [
         ("PLAY",         "▶",  (20,  65,  20),  (35,  95,  35),  (80,  210, 80),  (120, 245, 120)),
@@ -932,7 +943,7 @@ class Renderer:
         n = len(self._MENU_BTNS)
         total_h = (self._MENU_BTN_H_PLAY + (n - 1) * self._MENU_BTN_H
                    + (n - 1) * self._MENU_BTN_GAP)
-        start_y = SCREEN_HEIGHT // 2 - total_h // 2 + 120
+        start_y = SCREEN_HEIGHT // 2 - total_h // 2 + 140
         x = (SCREEN_WIDTH - self._MENU_BTN_W) // 2
         rects = []
         y = start_y
@@ -987,30 +998,35 @@ class Renderer:
 
         # --- Buttons ---
         rects = self._main_menu_button_rects()
+        mb = pygame.mouse.get_pressed()[0]
         for i, (rect, (label, icon, fill, fill_h, border, border_h)) in enumerate(
                 zip(rects, self._MENU_BTNS)):
-            hovered    = rect.collidepoint(mouse_pos)
-            col_fill   = fill_h   if hovered else fill
-            col_border = border_h if hovered else border
-            pygame.draw.rect(self.screen, col_fill,   rect, border_radius=10)
-            pygame.draw.rect(self.screen, col_border, rect, 2, border_radius=10)
+            hovered = rect.collidepoint(mouse_pos)
+            pressed = hovered and mb
+            if pressed:
+                col_fill   = tuple(max(0, c - 20) for c in fill)
+                col_border = border
+                draw_rect  = rect.inflate(-6, -6)
+            else:
+                col_fill   = fill_h if hovered else fill
+                col_border = border_h if hovered else border
+                draw_rect  = rect
+            pygame.draw.rect(self.screen, col_fill,   draw_rect, border_radius=10)
+            pygame.draw.rect(self.screen, col_border, draw_rect, 2, border_radius=10)
 
             # Icon + label centered together — secondary buttons use smaller font
-            font      = self.font_large  if i == 0 else self.font_med
+            font      = self.font_large   if i == 0 else self.font_med
             icon_font = self.font_icon_lg if i == 0 else self.font_icon_sm
             icon_surf = icon_font.render(icon, True, col_border)
             txt_surf  = font.render(label, True, HUD_COLOR)
             gap       = 20
             total_w   = icon_surf.get_width() + gap + txt_surf.get_width()
-            ix        = rect.centerx - total_w // 2
-            txt_top     = rect.centery - txt_surf.get_height() // 2
+            ix        = draw_rect.centerx - total_w // 2
+            txt_top     = draw_rect.centery - txt_surf.get_height() // 2
             txt_cap_mid = txt_top + font.get_ascent() // 2
             icon_y      = txt_cap_mid - icon_font.get_ascent() // 2
             self.screen.blit(icon_surf, (ix, icon_y))
             self.screen.blit(txt_surf,  (ix + icon_surf.get_width() + gap, txt_top))
-
-        hint = self.font_small.render("ESC to quit", True, (100, 100, 110))
-        self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
 
     # ------------------------------------------------------------------ #
     # Pause menu                                                           #
@@ -1494,7 +1510,7 @@ class Renderer:
                 f"{scroll + 1}–{end} of {total}  ·  up/down or scroll to navigate",
                 True, (100, 100, 100))
             self.screen.blit(nav, nav.get_rect(
-                centerx=SCREEN_WIDTH // 2, bottom=SCREEN_HEIGHT - 28 - self.font_small.get_height()))
+                centerx=SCREEN_WIDTH // 2, bottom=SCREEN_HEIGHT - 40))
 
     def draw_records(self, records: list, scroll: int = 0, tab: int = 0,
                      best_by_level: dict | None = None,
@@ -1535,14 +1551,40 @@ class Renderer:
     _SETTINGS_ROW_H = 88
     _SETTINGS_CTRL_X = SCREEN_WIDTH // 2 + 80  # left edge of controls column
 
+    # Settings layout: (label, type)
+    # type: "slider_music" | "slider_sfx" | "toggle"
+    _SETTINGS_ITEMS = [
+        # --- AUDIO ---
+        ("MUSIC VOLUME",    "slider_music"),
+        ("SFX VOLUME",      "slider_sfx"),
+        # --- DISPLAY ---
+        ("FULLSCREEN",      "toggle"),
+        ("SHOW FPS",        "toggle"),
+        # --- GAMEPLAY ---
+        ("COLORBLIND MODE", "toggle"),
+        ("DANGER VIGNETTE", "toggle"),
+        ("PARTICLES",       "toggle"),
+    ]
+    # Section dividers: insert a header before these item indices
+    _SETTINGS_SECTIONS = {0: "AUDIO", 2: "DISPLAY", 4: "GAMEPLAY"}
+    _SECTION_GAP = 52   # extra vertical space consumed by each section header
+
     def _settings_rows_y(self) -> list:
-        n = 7
+        """Return the centre-y of each settings row, accounting for section headers."""
+        n = len(self._SETTINGS_ITEMS)
+        n_sections = len(self._SETTINGS_SECTIONS)
         title_bottom = 100 + self.font_large.get_height() // 2
         hint_top = SCREEN_HEIGHT - 18 - self.font_small.get_height()
         available = hint_top - title_bottom
-        total_h = n * self._SETTINGS_ROW_H
-        start = title_bottom + (available - total_h) // 2 + self._SETTINGS_ROW_H // 2
-        return [start + i * self._SETTINGS_ROW_H for i in range(n)]
+        total_h = n * self._SETTINGS_ROW_H + n_sections * self._SECTION_GAP
+        y = title_bottom + (available - total_h) // 2 + self._SETTINGS_ROW_H // 2
+        rows = []
+        for i in range(n):
+            if i in self._SETTINGS_SECTIONS:
+                y += self._SECTION_GAP
+            rows.append(y)
+            y += self._SETTINGS_ROW_H
+        return rows
 
     def _slider_rect(self, row: int) -> pygame.Rect:
         y = self._settings_rows_y()[row]
@@ -1562,21 +1604,31 @@ class Renderer:
             pygame.draw.rect(self.screen, color,
                              pygame.Rect(track.x, track.y, fill_w, track.h), border_radius=5)
         knob_x = track.x + fill_w
-        hovered = math.hypot(mouse_pos[0] - knob_x, mouse_pos[1] - track.centery) < 14
+        hovered = math.hypot(mouse_pos[0] - knob_x, mouse_pos[1] - track.centery) < 18
         light = tuple(min(255, c + 60) for c in color)
         self._aa_circle(self.screen, light if hovered else color, (knob_x, track.centery), 12)
-        pct = self.font_small.render(f"{int(value * 100)}%", True, HUD_COLOR)
-        self.screen.blit(pct, pct.get_rect(midleft=(track.right + 20, y)))
+        # Percentage above the knob
+        pct = self.font_small.render(f"{int(value * 100)}%", True, light if hovered else HUD_COLOR)
+        self.screen.blit(pct, pct.get_rect(midbottom=(knob_x, track.top - 6)))
 
-    def _draw_toggle(self, y: int, on: bool) -> None:
+    def _draw_toggle(self, mouse_pos, y: int, on: bool) -> None:
         tog = pygame.Rect(self._SETTINGS_CTRL_X, y - 22, 72, 44)
-        pygame.draw.rect(self.screen, (60, 140, 60) if on else (60, 60, 60), tog, border_radius=22)
+        hovered = tog.inflate(0, 20).collidepoint(mouse_pos)
+        pressed = hovered and pygame.mouse.get_pressed()[0]
+        if pressed:
+            bg_on  = (40, 110, 40)
+            bg_off = (45, 45, 45)
+        elif hovered:
+            bg_on  = (80, 170, 80)
+            bg_off = (80, 80, 80)
+        else:
+            bg_on  = (60, 140, 60)
+            bg_off = (60, 60, 60)
+        pygame.draw.rect(self.screen, bg_on if on else bg_off, tog, border_radius=22)
         pygame.draw.rect(self.screen, (120, 220, 120) if on else (100, 100, 100), tog, 2, border_radius=22)
         knob_x = tog.right - 26 if on else tog.left + 26
-        self._aa_circle(self.screen, (220, 255, 220) if on else (160, 160, 160), (knob_x, tog.centery), 16)
-        lbl = self.font_small.render("ON" if on else "OFF", True,
-                                     (120, 220, 120) if on else (120, 120, 120))
-        self.screen.blit(lbl, lbl.get_rect(midleft=(tog.right + 20, y)))
+        knob_r = 14 if pressed else 16  # knob shrinks slightly when pressed
+        self._aa_circle(self.screen, (220, 255, 220) if on else (160, 160, 160), (knob_x, tog.centery), knob_r)
 
     def draw_settings(self, mouse_pos, settings) -> None:
         cx = SCREEN_WIDTH // 2
@@ -1586,40 +1638,42 @@ class Renderer:
         rows_y = self._settings_rows_y()
         label_x = cx - 60
 
-        # --- Music Volume ---
-        label = self.font_med.render("MUSIC VOLUME", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[0])))
-        self._draw_slider(mouse_pos, rows_y[0], settings.music_volume, (80, 180, 80))
+        # Map item index to settings value
+        values = [
+            settings.music_volume,
+            settings.sfx_volume,
+            settings.fullscreen,
+            settings.show_fps,
+            settings.colorblind_mode,
+            settings.danger_vignette,
+            settings.particles,
+        ]
+        slider_colors = [(80, 180, 80), (80, 140, 200)]
 
-        # --- SFX Volume ---
-        label = self.font_med.render("SFX VOLUME", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[1])))
-        self._draw_slider(mouse_pos, rows_y[1], settings.sfx_volume, (80, 140, 200))
+        for i, (name, kind) in enumerate(self._SETTINGS_ITEMS):
+            y = rows_y[i]
 
-        # --- Fullscreen ---
-        label = self.font_med.render("FULLSCREEN", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[2])))
-        self._draw_toggle(rows_y[2], settings.fullscreen)
+            # Section header
+            if i in self._SETTINGS_SECTIONS:
+                hdr_y = y - self._SETTINGS_ROW_H // 2 - self._SECTION_GAP // 2
+                hdr = self.font_small.render(self._SETTINGS_SECTIONS[i], True, (90, 90, 110))
+                hdr_rect = hdr.get_rect(midleft=(cx - 460, hdr_y))
+                self.screen.blit(hdr, hdr_rect)
+                # Divider line
+                line_x = hdr_rect.right + 16
+                line_y = hdr_rect.centery
+                pygame.draw.line(self.screen, (55, 55, 70),
+                                 (line_x, line_y), (cx + 500, line_y), 1)
 
-        # --- Colorblind Mode ---
-        label = self.font_med.render("COLORBLIND MODE", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[3])))
-        self._draw_toggle(rows_y[3], settings.colorblind_mode)
+            label = self.font_med.render(name, True, (180, 180, 180))
+            self.screen.blit(label, label.get_rect(midright=(label_x, y)))
 
-        # --- Show FPS ---
-        label = self.font_med.render("SHOW FPS", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[4])))
-        self._draw_toggle(rows_y[4], settings.show_fps)
-
-        # --- Danger Vignette ---
-        label = self.font_med.render("DANGER VIGNETTE", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[5])))
-        self._draw_toggle(rows_y[5], settings.danger_vignette)
-
-        # --- Particles ---
-        label = self.font_med.render("PARTICLES", True, (180, 180, 180))
-        self.screen.blit(label, label.get_rect(midright=(label_x, rows_y[6])))
-        self._draw_toggle(rows_y[6], settings.particles)
+            if kind == "slider_music":
+                self._draw_slider(mouse_pos, y, values[i], slider_colors[0])
+            elif kind == "slider_sfx":
+                self._draw_slider(mouse_pos, y, values[i], slider_colors[1])
+            else:
+                self._draw_toggle(mouse_pos, y, values[i])
 
         hint = self.font_small.render("ESC  ·  back", True, (120, 120, 120))
         self.screen.blit(hint, hint.get_rect(center=(cx, SCREEN_HEIGHT - 18)))
@@ -1636,20 +1690,20 @@ class Renderer:
                 setattr(settings, attr, max(0.0, min(1.0, t)))
                 return action
 
-        # Toggles
-        if self._toggle_rect(2).collidepoint(mouse_pos):
+        # Toggles — indices match _SETTINGS_ITEMS order
+        if self._toggle_rect(2).inflate(0, 20).collidepoint(mouse_pos):
             settings.fullscreen = not settings.fullscreen
             return "fullscreen_toggled"
-        if self._toggle_rect(3).collidepoint(mouse_pos):
-            settings.colorblind_mode = not settings.colorblind_mode
-            return "colorblind_toggled"
-        if self._toggle_rect(4).collidepoint(mouse_pos):
+        if self._toggle_rect(3).inflate(0, 20).collidepoint(mouse_pos):
             settings.show_fps = not settings.show_fps
             return "setting_toggled"
-        if self._toggle_rect(5).collidepoint(mouse_pos):
+        if self._toggle_rect(4).inflate(0, 20).collidepoint(mouse_pos):
+            settings.colorblind_mode = not settings.colorblind_mode
+            return "colorblind_toggled"
+        if self._toggle_rect(5).inflate(0, 20).collidepoint(mouse_pos):
             settings.danger_vignette = not settings.danger_vignette
             return "setting_toggled"
-        if self._toggle_rect(6).collidepoint(mouse_pos):
+        if self._toggle_rect(6).inflate(0, 20).collidepoint(mouse_pos):
             settings.particles = not settings.particles
             return "setting_toggled"
 
