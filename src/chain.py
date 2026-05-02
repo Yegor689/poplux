@@ -71,12 +71,22 @@ class Chain:
                                    is_bonus=random.random() < _BONUS_CHANCE))
 
     def spawn_one(self) -> Ball:
-        """Slot a new ball just behind the current rear ball (no shifting needed).
+        """Slot a new ball at the spawn end.
         Call only when needs_spawn() is True."""
         last_two = [b.color for b in self.balls[:2]]
         color = self._next_pair_color() if self.pair_mode else _random_color(last_two, self.color_pool)
-        new_dist = (self.balls[0].path_distance - BALL_DIAMETER) if self.balls else 0.0
-        new_ball = Ball(color=color, path_distance=max(0.0, new_dist),
+        if not self.balls:
+            new_dist = 0.0
+        else:
+            rear = self.balls[0].path_distance
+            # If the rear ball is far from the origin (e.g. after a bomb cleared the
+            # rear section), spawn from the origin so new balls enter naturally rather
+            # than teleporting into the middle of the path.
+            if rear > BALL_DIAMETER * 2:
+                new_dist = 0.0
+            else:
+                new_dist = rear - BALL_DIAMETER
+        new_ball = Ball(color=color, path_distance=new_dist,
                         is_bonus=random.random() < _BONUS_CHANCE)
         self.balls.insert(0, new_ball)
         return new_ball
@@ -84,7 +94,10 @@ class Chain:
     def needs_spawn(self) -> bool:
         """True when the rear ball has moved far enough to fit a new ball behind it."""
         if not self.balls:
-            return True  # chain emptied (e.g. by bomb) — allow fresh spawn at origin
+            return True  # chain emptied — allow fresh spawn at origin
+        # Also spawn from origin if the rear ball is far ahead (post-bomb gap)
+        if self.balls[0].path_distance > BALL_DIAMETER * 2:
+            return True
         return self.balls[0].path_distance >= BALL_DIAMETER
 
     # ------------------------------------------------------------------
@@ -315,17 +328,22 @@ class Chain:
     # ------------------------------------------------------------------
 
     def check_matches(self, index: int) -> list[int]:
-        """Return indices of the contiguous same-color group around index."""
+        """Return indices of the contiguous same-color group around index.
+        Stops at any open gap so balls in different segments are never grouped."""
         if not self.balls or index < 0 or index >= len(self.balls):
             return []
         color = self.balls[index].color
         group = [index]
         i = index - 1
         while i >= 0 and self.balls[i].color == color:
+            if self.balls[i + 1].path_distance - self.balls[i].path_distance > _GAP_THRESHOLD:
+                break
             group.append(i)
             i -= 1
         i = index + 1
         while i < len(self.balls) and self.balls[i].color == color:
+            if self.balls[i].path_distance - self.balls[i - 1].path_distance > _GAP_THRESHOLD:
+                break
             group.append(i)
             i += 1
         return group

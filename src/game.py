@@ -645,9 +645,8 @@ class Game:
         if self._spawn_hold > 0:
             self._spawn_hold = max(0.0, self._spawn_hold - dt)
         elif self.spawned_count < self._total_balls and self.chain.needs_spawn():
-            while self.spawned_count < self._total_balls and self.chain.needs_spawn():
-                self.chain.spawn_one()
-                self.spawned_count += 1
+            self.chain.spawn_one()
+            self.spawned_count += 1
 
         # Build chain positions once per frame — shared by MAGNET and _check_collisions
         self._frame_chain_positions = [

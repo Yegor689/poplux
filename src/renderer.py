@@ -201,7 +201,7 @@ class Renderer:
     def draw_aim_line(self, frog, aim_timer: float, chain_positions: list | None = None) -> None:
         if aim_timer <= 0:
             return
-        base_alpha = int(220 * min(aim_timer / 2.0, 1.0))  # fade in over 2 s
+        base_alpha = int(255 * min(aim_timer / 1.0, 1.0))  # fade in over 1 s, fully opaque
         mouth_dist = BALL_RADIUS * 4
         sx = frog.x + math.cos(frog.angle) * mouth_dist
         sy = frog.y + math.sin(frog.angle) * mouth_dist
@@ -210,37 +210,44 @@ class Renderer:
 
         if chain_positions is None:
             chain_positions = []
-        # Compute proximity factor: how close the frog is to the chain
-        # Closer chain = brighter, thicker, more opaque line
-        if chain_positions:
-            fx, fy = frog.x, frog.y
-            min_dist_sq = min((fx - cx) ** 2 + (fy - cy) ** 2 for cx, cy in chain_positions)
-            min_dist = min_dist_sq ** 0.5
-            # Fully bright within 200px, fades to 30% at 700px+
-            prox = max(0.3, 1.0 - (min_dist - 200) / 500)
-        else:
-            prox = 0.5
+
+        # Find how far along the ray the first chain ball is hit
+        max_t = float("inf")
+        hit_r = BALL_RADIUS + 4  # slightly generous hit radius
+        for cx, cy in chain_positions:
+            # Project chain ball centre onto the ray; find closest approach
+            ex, ey = cx - sx, cy - sy
+            proj = ex * adx + ey * ady
+            if proj < 0:
+                continue  # ball is behind the ray origin
+            perp_sq = (ex - adx * proj) ** 2 + (ey - ady * proj) ** 2
+            if perp_sq <= hit_r * hit_r:
+                t_hit = proj - math.sqrt(max(0.0, hit_r * hit_r - perp_sq))
+                if t_hit < max_t:
+                    max_t = t_hit
 
         # Animate dots scrolling toward the target
         phase = (pygame.time.get_ticks() / 120) % 22
         line_surf = self._aim_line_surf
         line_surf.fill((0, 0, 0, 0))
-        dot_r = max(2, int(3 + prox * 3))   # 2–6 px radius based on proximity
+        dot_r = 5
         t = phase
         while True:
+            if t >= max_t:
+                break
             x = sx + adx * t
             y = sy + ady * t
             if not (0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT):
                 break
-            # Distance fade along the line, boosted by proximity
-            fade = max(0.2, prox * (1.0 - t / 800))
+            # Slight fade with distance
+            fade = max(0.55, 1.0 - t / 1200)
             dot_alpha = int(base_alpha * fade)
             if dot_alpha > 5:
                 pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), dot_r,
-                                             (120, 220, 255, dot_alpha))
-                # Bright core
-                pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), max(1, dot_r - 2),
-                                             (255, 255, 255, min(255, dot_alpha + 60)))
+                                             (80, 210, 255, dot_alpha))
+                # Bright white core
+                pygame.gfxdraw.filled_circle(line_surf, int(x), int(y), dot_r - 2,
+                                             (255, 255, 255, min(255, dot_alpha)))
             t += 22
         self.screen.blit(line_surf, (0, 0))
 
