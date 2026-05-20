@@ -56,6 +56,9 @@ class Game:
         self._cheat_message: str = ""
         self._endless_mode: bool = False
         self._endless_base_speed: float = 0.0
+        self._endless_last_speed_tier: int = 1  # last integer speed tier shown
+        self._combo_window: float = 0.0   # countdown; >0 means a cross-shot combo is active
+        self._combo_level: int = 1        # cascade level to inherit on next shot-triggered match
         self._slowdown_timer: float = 0.0
         self.coins: list[Coin] = []
         self.coin_spots: list = []
@@ -104,6 +107,8 @@ class Game:
         self._slowdown_timer = 0.0
         self._danger_beat_timer = 0.0
         self._aim_timer = 0.0
+        self._combo_window = 0.0
+        self._combo_level = 1
         self.coins = []
         self.coin_spots = [
             self._scale_pos(s, _PATH_SCALE_X, _PATH_X_OFFSET, _PATH_SCALE_Y)
@@ -153,6 +158,7 @@ class Game:
         self._reset_session(level_idx, 999_999)
         self._endless_mode = True
         self._endless_base_speed = float(LEVELS[level_idx]["chain_speed"])
+        self._endless_last_speed_tier = 1
         self._pre_pause_state = "playing"
         self.state = "playing"
 
@@ -505,6 +511,10 @@ class Game:
         life = 1.1
         self.score_popups.append(ScorePopup(cx, cy, text, color, life, life, cascade_level=cascade_level))
 
+        # Keep the cross-shot combo window alive and bump the level for the next shot
+        self._combo_window = 2.0
+        self._combo_level = cascade_level + 1
+
         for (_, color_name, cascade_level), (pcx, pcy) in zip(
                 self.chain.recent_pops, positions):
             self.score += cascade_level * 5  # 5 pts × combo multiplier per ball popped
@@ -546,6 +556,10 @@ class Game:
         self.frog.tick(dt)
         if self._slowdown_timer > 0:
             self._slowdown_timer = max(0.0, self._slowdown_timer - dt)
+        if self._combo_window > 0:
+            self._combo_window = max(0.0, self._combo_window - dt)
+            if self._combo_window == 0.0:
+                self._combo_level = 1
 
         if self.chain.bonus_popped:
             self._slowdown_timer = 15.0
@@ -568,6 +582,13 @@ class Game:
             scale = 1.0 + self.elapsed_time / 120.0
             self.chain.speed = min(self._endless_base_speed * scale,
                                    self._endless_base_speed * 4.0)
+            tier = int(self.chain.speed / self._endless_base_speed)
+            if tier > self._endless_last_speed_tier:
+                self._endless_last_speed_tier = tier
+                cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 80
+                self.score_popups.append(
+                    ScorePopup(cx, cy, f"SPEED UP!  {tier}×", (255, 80, 40), 1.8, 1.8)
+                )
 
         self._spawn_particles()
 
@@ -736,7 +757,8 @@ class Game:
                     idx = self.chain.insert(fired, path_dist)
                     matches = self.chain.check_matches(idx)
                     if len(matches) >= MATCH_MINIMUM:
-                        self.chain.queue_match(matches)
+                        inherited = self._combo_level if self._combo_window > 0 else 1
+                        self.chain.queue_match(matches, inherited_level=inherited)
             else:
                 surviving.append(fired)
         self.fired_balls = surviving
@@ -784,11 +806,8 @@ class Game:
         if not self.coins or not self.fired_balls:
             return
         hit_coin_ids: set[int] = set()
-        hit_ball_ids: set[int] = set()
         for coin in self.coins:
             for ball in self.fired_balls:
-                if id(ball) in hit_ball_ids:
-                    continue
                 dist_sq = (ball.x - coin.x) ** 2 + (ball.y - coin.y) ** 2
                 if dist_sq <= (ball.radius + coin.radius) ** 2:
                     self.score += 50
@@ -797,11 +816,9 @@ class Game:
                         ScorePopup(coin.x, coin.y, "+50", (255, 215, 0), 1.1, 1.1)
                     )
                     hit_coin_ids.add(id(coin))
-                    hit_ball_ids.add(id(ball))
                     break
         if hit_coin_ids:
             self.coins = [c for c in self.coins if id(c) not in hit_coin_ids]
-            self.fired_balls = [b for b in self.fired_balls if id(b) not in hit_ball_ids]
 
     def _check_aim_powerup_collisions(self) -> None:
         """Fired balls collect aim powerups without being consumed."""
@@ -847,7 +864,12 @@ class Game:
             self.renderer.draw_path(self.path)
             self.renderer.draw_coins(self.coins)
             self.renderer.draw_aim_powerups(self.aim_powerups)
-            self.renderer.draw_chain(self.chain, self.path)
+            _match_color = None
+            if self.frog:
+                fb = self.frog.current_ball
+                if not (fb.is_bomb or fb.is_rainbow) and "RAINBOW" not in self.active_cheats:
+                    _match_color = fb.color
+            self.renderer.draw_chain(self.chain, self.path, match_color=_match_color)
             if SETTINGS.particles:
                 self.renderer.draw_particles(self.particles)
             self.renderer.draw_score_popups(self.score_popups)
@@ -856,6 +878,8 @@ class Game:
             self.renderer.draw_frog(self.frog)
             _front = self.chain.front_distance() if self.chain.balls else 0.0
             _path_len = self.path.total_length if self.path else 1.0
+            _endless_mult = (self.chain.speed / self._endless_base_speed
+                             if self._endless_mode and self._endless_base_speed else None)
             self.renderer.draw_hud(
                 remaining=len(self.chain.balls),
                 spawned=self.spawned_count,
@@ -866,6 +890,7 @@ class Game:
                 slowdown_timer=self._slowdown_timer,
                 danger_frac=_front / _path_len if SETTINGS.danger_vignette else 0.0,
                 fps=self.clock.get_fps(),
+                endless_speed_mult=_endless_mult,
             )
             _ov_alpha = int(self._overlay_t * 255)
             if self.state == "paused":

@@ -348,13 +348,13 @@ class Chain:
             i += 1
         return group
 
-    def queue_match(self, indices: list[int]) -> None:
+    def queue_match(self, indices: list[int], inherited_level: int = 1) -> None:
         """Schedule matched balls to pop after the entry animation completes."""
         if not self._cascade_pending:
             self._cascade_pending = [self.balls[j] for j in indices]
             self._cascade_timer = 1.0 / _ENTRY_SPEED  # wait for entry anim (~0.12 s)
-            self._cascade_level = 1
-            self._next_cascade_level = 1
+            self._cascade_level = inherited_level
+            self._next_cascade_level = inherited_level
 
     def remove_balls(self, indices: list[int]) -> None:
         """Remove balls at the given indices.

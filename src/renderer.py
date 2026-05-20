@@ -303,8 +303,12 @@ class Renderer:
         pygame.draw.line(surface, (255, 200, 0), (cx - r2, cy), (cx + r2, cy), 2)
         pygame.draw.line(surface, (255, 200, 0), (cx, cy - r2), (cx, cy + r2), 2)
 
-    def draw_chain(self, chain, path) -> None:
+    def draw_chain(self, chain, path, match_color: str | None = None) -> None:
         t_pulse = pygame.time.get_ticks() / 1000.0
+        # Pulsing highlight ring for balls that match the current fired ball color
+        _hl_phase = (math.sin(t_pulse * 6.0) * 0.5 + 0.5)  # 0→1, 3 Hz
+        _hl_alpha = int(100 + _hl_phase * 120)
+        _hl_r_extra = int(6 + _hl_phase * 4)
         for ball in chain.balls:
             cx, cy = path.point_at(ball.path_distance + ball.path_offset)
             if ball.entry_t < 1.0:
@@ -321,6 +325,11 @@ class Renderer:
                                         (brightness, brightness, 255))
                 pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r + 2,
                                         (brightness, brightness, 255, 80))
+            if match_color and ball.color == match_color and not ball.is_bomb and not ball.is_bonus:
+                # White highlight ring — pulses gently to draw the eye
+                pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy),
+                                        ball.radius + _hl_r_extra,
+                                        (255, 255, 255, _hl_alpha))
             self._draw_ball(self.screen, ball.color, int(cx), int(cy), ball.radius,
                             spin, tangent)
 
@@ -471,7 +480,7 @@ class Renderer:
     _DANGER_START = 0.82        # fraction of path at which danger begins
     _DANGER_PEAK  = 0.96        # fraction at which vignette is at full intensity
 
-    def draw_hud(self, remaining: int, spawned: int, total: int, elapsed_time: float = 0.0, score: int = 0, aim_timer: float = 0.0, slowdown_timer: float = 0.0, danger_frac: float = 0.0, fps: float = 0.0) -> None:
+    def draw_hud(self, remaining: int, spawned: int, total: int, elapsed_time: float = 0.0, score: int = 0, aim_timer: float = 0.0, slowdown_timer: float = 0.0, danger_frac: float = 0.0, fps: float = 0.0, endless_speed_mult: float | None = None) -> None:
         # --- Danger vignette — red screen-edge pulse when chain is close to hole ---
         if danger_frac > self._DANGER_START:
             import numpy as np
@@ -524,6 +533,15 @@ class Renderer:
         secs = int(elapsed_time) % 60
         timer_text = self.font_med.render(f"{mins}:{secs:02d}", True, HUD_COLOR)
         self.screen.blit(timer_text, timer_text.get_rect(center=(SCREEN_WIDTH // 2, 48)))
+
+        # --- Endless speed indicator — below timer ---
+        if endless_speed_mult is not None:
+            frac = min(1.0, (endless_speed_mult - 1.0) / 3.0)  # 1×→4× maps to 0→1
+            r = int(80 + frac * 175)
+            g = int(220 - frac * 180)
+            b = int(80 - frac * 60)
+            spd_text = self.font_xsmall.render(f"▶ {endless_speed_mult:.1f}×", True, (r, g, b))
+            self.screen.blit(spd_text, spd_text.get_rect(center=(SCREEN_WIDTH // 2, 92)))
 
         # --- Slowdown indicator — bottom-right when active ---
         if slowdown_timer > 0:
