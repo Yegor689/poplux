@@ -4,11 +4,18 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+.pytest_cache/
 
 # Virtual environment
 .venv/
 venv/
 env/
+
+# Node
+node_modules/
+
+# User settings (generated at runtime)
+config/settings.json
 
 # Claude
 .claude/

@@ -56,7 +56,7 @@ def reload_levels():
     LEVELS[:]      = data
 
 
-_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "settings.json")
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "config", "settings.json")
 
 class Settings:
     """Global mutable settings — single instance, imported everywhere as needed."""

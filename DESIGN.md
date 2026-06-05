@@ -46,6 +46,7 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 - If the group is **3 or more**, it is queued to pop after a short delay (entry animation completes).
 - After a pop, if the newly adjacent balls form another match, a **cascade** follows with a brief inter-pop delay (0.5 s).
 - Cascades continue until no new matches form. Each cascade level increments the combo multiplier.
+- **Cross-shot combo window:** after any pop, a 2-second window opens. If the next shot also triggers a match before the window expires, the inherited cascade level carries over rather than resetting to 1, allowing combos to build across consecutive shots.
 
 ### 2.6 Special Balls
 - **Bonus ball:** Appears randomly in the chain; popping it activates a 15-second slowdown (chain at 35% speed). Rendered with a pulsing blue ring.
@@ -53,8 +54,8 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 - **Rainbow ball:** Fired by the ship (~5% chance); auto-matches the color of the ball it hits.
 
 ### 2.7 Collectibles & Powerups
-- **Coins:** Appear at level-defined spots on a random timer (15–25 s). Shooting a coin scores +10 points.
-- **Aim Line powerup:** Appears at level-defined spots on a random timer (20–35 s). A fired ball passing through it activates a 12-second dotted aim-line trajectory indicator. Does not consume the fired ball.
+- **Coins:** Appear at level-defined spots on a random timer (15–25 s). Shooting a coin scores +50 points. The fired ball passes through the coin and continues toward the chain.
+- **Aim Line powerup:** Appear at level-defined spots on a random timer (20–35 s). A fired ball passing through it activates a 12-second dotted aim-line trajectory indicator and doubles shot speed for its duration. Does not consume the fired ball.
 
 ### 2.8 Catch-Up & Freeze Mechanics
 - Gaps are evaluated per-segment after every `advance()` tick.
@@ -67,12 +68,14 @@ A single-player 2D arcade color-matching game. A ship sits at a fixed position o
 - Each popped ball scores `cascade_level × 5` points.
 - Score is displayed via an animated counter that closes the gap in ~0.3 s.
 - A floating popup shows the score delta; cascade pops show `+N × multiplier`.
-- Coins score +10 each.
+- Coins score +50 each.
+- Bomb blasts score +25 per destroyed ball.
 
 ### 2.10 Endless Mode
 - Available for every level from the level select screen.
 - No ball limit; the chain spawns indefinitely.
 - Chain speed ramps up continuously: `speed = base_speed × (1 + elapsed / 120)`, capped at 4× base.
+- A speed multiplier indicator (`▶ 1.4×`) is shown below the timer, color-shifting green → orange → red as speed climbs. A center-screen "SPEED UP! N×" popup fires each time the multiplier crosses a new integer tier.
 - Loss condition is the same (chain reaches the hole). Score is saved to a separate endless leaderboard.
 
 ### 2.11 Win / Loss Conditions
@@ -184,13 +187,13 @@ Synthesized at startup using numpy waveforms (no audio files required):
 |---|---|
 | **Background** | Dark blue-black sky with a seeded starfield of 400 procedural stars (dim, mid, bright tiers) with diffraction spikes on the brightest. 14 animated asteroids drift across the field; each is numpy-rendered with a polar silhouette mask, layered noise texture, edge vignette, and distance-based craters. Drawn at 60% opacity. |
 | **Path** | Dark gray tube drawn along waypoints. A pulsing purple/magenta black-hole at the endpoint with accretion disk rings. |
-| **Chain balls** | Layered circles: base color, dark rim, inner glow, sheen, and specular highlight. A rotating seam stripe is drawn perpendicular to the travel direction. Bonus balls have a pulsing blue ring. Colorblind mode overlays a distinct symbol on each color. |
-| **Ship** | Gunmetal hull with swept two-part wings, amber leading-edge trim, a cannon barrel, a flat visor slit with cyan scan-line, a nose cone, twin engine glows, and hull accent rings. Rotates to face mouse. Current ball shown at cannon tip; next ball shown smaller in the rear magazine bay. |
+| **Chain balls** | Layered circles: base color, dark rim, inner glow, sheen, and specular highlight. A rotating seam stripe is drawn perpendicular to the travel direction. Bonus balls have a pulsing blue ring. Chain balls whose color matches the current queued shot glow with a pulsing white ring (suppressed on bonus balls). Colorblind mode overlays a distinct symbol on each color. |
+| **Ship** | Gunmetal hull with swept two-part delta wings, amber leading-edge trim, a short cannon barrel, a flat cockpit canopy with cyan glass highlights, a pointed nose cone, twin engine glows at the tail, and amber accent stripes. Rotates to face mouse. Current ball shown at cannon tip; next ball shown smaller in the rear magazine bay. |
 | **Fired ball** | Same appearance as chain balls. Travels in a straight line until chain collision or out-of-bounds. |
 | **Coins** | Pulsing gold circles with a spinning star icon and glow rings. |
 | **Aim powerup** | Pulsing cyan crosshair with glow rings. |
 | **Aim line** | Animated scrolling dotted line from ship to first collision point, on a per-frame SRCALPHA surface. |
-| **HUD** | Score box (top-left, animated counter), timer (top-center), balls-remaining box (top-right), slowdown and aim line progress bars (bottom-right when active), FPS counter (optional). |
+| **HUD** | Score box (top-left, animated counter), timer (top-center), endless speed indicator below timer (endless mode only, color-shifts with intensity), balls-remaining box (top-right), slowdown and aim line progress bars (bottom-right when active), FPS counter (optional). |
 | **Danger vignette** | Red pulsing edge vignette baked as a numpy gradient, applied when the chain front exceeds 82% of path length. Intensity and pulse rate increase with proximity. |
 | **Score popups** | Floating text with cascade-level-scaled font; yellow for level 1, orange for level 2, coral for level 3+. |
 | **Level select** | Scrollable list on the left; detail panel on the right shows level name, subtitle, stats, and best normal run + best endless run side by side. |

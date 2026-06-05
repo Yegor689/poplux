@@ -74,8 +74,9 @@ class Frog:
     def shoot(self) -> Ball:
         """Fire the current ball; cycle next -> current, generate new next."""
         ball = self.current_ball
-        # Position at the frog's mouth (edge in the aim direction)
-        mouth_dist = BALL_RADIUS * 3 + BALL_RADIUS
+        # Position at the frog's mouth (edge in the aim direction).
+        # Matches the displayed barrel tip + ball radius in renderer.draw_frog.
+        mouth_dist = BALL_RADIUS * 1.95 + BALL_RADIUS + 1
         ball.x = self.x + math.cos(self.angle) * mouth_dist
         ball.y = self.y + math.sin(self.angle) * mouth_dist
         ball.dx = math.cos(self.angle) * SHOOT_SPEED

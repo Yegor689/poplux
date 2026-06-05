@@ -319,12 +319,16 @@ class Renderer:
             tangent = path.direction_at(ball.path_distance)
             spin = ball.path_distance / ball.radius
             if ball.is_bonus:
-                ring_r = ball.radius + 5 + int(math.sin(t_pulse * 5) * 2)
+                ring_r = ball.radius + 7 + int(math.sin(t_pulse * 5) * 2)
                 brightness = int(abs(math.sin(t_pulse * 4)) * 80 + 175)
-                pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r,
-                                        (brightness, brightness, 255))
-                pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r + 2,
-                                        (brightness, brightness, 255, 80))
+                # Soft outer glow halo
+                for i in range(4, 0, -1):
+                    pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r + i,
+                                            (brightness, brightness, 255, 50 - i * 8))
+                # Chunky core ring — multiple stacked circles for thickness
+                for i in range(-2, 3):
+                    pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy), ring_r + i,
+                                            (brightness, brightness, 255))
             if match_color and ball.color == match_color and not ball.is_bomb and not ball.is_bonus:
                 # White highlight ring — pulses gently to draw the eye
                 pygame.gfxdraw.aacircle(self.screen, int(cx), int(cy),
@@ -370,91 +374,152 @@ class Renderer:
             return (int(cx + fc * fwd + pc * perp),
                     int(cy + fs * fwd + ps * perp))
 
-        HULL  = (32, 36, 44)    # dark gunmetal
-        PANEL = (44, 50, 62)    # lighter panel
-        SPINE = (58, 66, 82)    # spine highlight
-        AMBER = (220, 155, 25)  # amber accent
-        AMBER2= (140,  95, 10)  # dark amber
-        EDGE  = (80,  92, 115)  # hull edge aa
+        HULL  = (38, 44, 56)    # gunmetal — lighter than before for better contrast
+        PANEL = (54, 62, 78)    # mid panel
+        SPINE = (78, 90, 110)   # bright highlight
+        AMBER = (235, 165, 30)  # amber accent (brighter)
+        AMBER2= (150, 100, 15)  # dark amber
+        EDGE  = (110, 125, 150) # bright hull edge
+        DARK  = (18, 22, 30)    # deep shadow
+        CYAN  = (0, 220, 255)   # cockpit glow
 
-        # --- Engine glow ---
-        for perp_off in (-R * 0.42, R * 0.42):
-            ex, ey = pt(-R * 1.1, perp_off)
-            self._aa_circle(self.screen, (255,  70,   5), (ex, ey), int(R * 0.62))
-            self._aa_circle(self.screen, (255, 170,  40), (ex, ey), int(R * 0.38))
-            self._aa_circle(self.screen, (255, 240, 180), (ex, ey), int(R * 0.18))
+        # --- Engine glows (twin nozzles at the tail) ---
+        for perp_off in (-R * 0.28, R * 0.28):
+            ex, ey = pt(-R * 1.4, perp_off)
+            # Outer warm halo
+            self._aa_circle(self.screen, (255,  60,  10), (ex, ey), int(R * 0.55))
+            self._aa_circle(self.screen, (255, 150,  30), (ex, ey), int(R * 0.36))
+            self._aa_circle(self.screen, (255, 220, 130), (ex, ey), int(R * 0.20))
+            # Bright white core
+            self._aa_circle(self.screen, (255, 255, 255), (ex, ey), int(R * 0.08))
 
-        # --- Swept wings (two-part: inner strake + outer panel) ---
+        # --- Delta wings — proper swept-back triangles ---
+        # Each wing leads from mid-hull (fwd≈0.4, perp≈0.25) outward and back to a
+        # sharp tip behind the engines (fwd≈-1.3, perp≈±1.65), trailing back to
+        # the rear hull at (fwd≈-1.2, perp≈±0.45).
         for sign in (-1, 1):
-            strake = [pt(R * 0.5,  sign * R * 0.5),
-                      pt(-R * 0.2, sign * R * 0.9),
-                      pt(-R * 1.0, sign * R * 0.48)]
-            outer  = [pt(R * 0.1,  sign * R * 0.85),
-                      pt(-R * 0.4, sign * R * 1.7),
-                      pt(-R * 1.0, sign * R * 0.85),
-                      pt(-R * 0.2, sign * R * 0.9)]
-            pygame.draw.polygon(self.screen, PANEL,  strake)
-            pygame.draw.polygon(self.screen, HULL,   outer)
-            pygame.gfxdraw.aapolygon(self.screen, strake, EDGE)
-            pygame.gfxdraw.aapolygon(self.screen, outer,  EDGE)
-            # amber leading-edge trim
+            # Drop shadow first (offset slightly)
+            shadow = [pt(R * 0.4,   sign * R * 0.28),
+                      pt(-R * 1.3,  sign * R * 1.65),
+                      pt(-R * 1.2,  sign * R * 0.45)]
+            shadow = [(p[0] + 2, p[1] + 2) for p in shadow]
+            pygame.draw.polygon(self.screen, DARK, shadow)
+            # Main wing panel
+            wing = [pt(R * 0.4,   sign * R * 0.28),   # root leading
+                    pt(-R * 1.3,  sign * R * 1.65),   # tip
+                    pt(-R * 1.2,  sign * R * 0.45)]   # root trailing
+            pygame.draw.polygon(self.screen, HULL, wing)
+            pygame.gfxdraw.aapolygon(self.screen, wing, EDGE)
+            # Inner wing panel (lighter — catches light)
+            inner = [pt(R * 0.35,  sign * R * 0.3),
+                     pt(-R * 0.6,  sign * R * 0.95),
+                     pt(-R * 1.2,  sign * R * 0.45)]
+            pygame.draw.polygon(self.screen, PANEL, inner)
+            pygame.gfxdraw.aapolygon(self.screen, inner, EDGE)
+            # Amber hot leading edge
             pygame.draw.aaline(self.screen, AMBER,
-                               pt(R * 0.5, sign * R * 0.5),
-                               pt(-R * 0.35, sign * R * 1.62))
-            # panel rib
+                               pt(R * 0.4, sign * R * 0.28),
+                               pt(-R * 1.3, sign * R * 1.65))
+            pygame.draw.aaline(self.screen, AMBER,
+                               pt(R * 0.4, sign * R * 0.28 + sign),
+                               pt(-R * 1.3, sign * R * 1.65 + sign))  # doubled for thickness
+            # Trailing edge highlight
+            pygame.draw.aaline(self.screen, SPINE,
+                               pt(-R * 1.3, sign * R * 1.65),
+                               pt(-R * 1.2, sign * R * 0.45))
+            # Wing rib (panel seam)
             pygame.draw.aaline(self.screen, AMBER2,
-                               pt(R * 0.0, sign * R * 0.72),
-                               pt(-R * 0.85, sign * R * 0.65))
-            # wing tip navigation dot
-            wx, wy = pt(-R * 0.38, sign * R * 1.68)
-            self._aa_circle(self.screen, (200, 220, 255), (wx, wy), int(R * 0.09))
-            pygame.gfxdraw.aacircle(self.screen, wx, wy, int(R * 0.09), (255, 255, 255))
+                               pt(-R * 0.2, sign * R * 0.5),
+                               pt(-R * 1.0, sign * R * 1.0))
+            # Wing tip navigation light (bright cyan-white)
+            wx, wy = pt(-R * 1.25, sign * R * 1.58)
+            self._aa_circle(self.screen, CYAN, (wx, wy), int(R * 0.12))
+            self._aa_circle(self.screen, (255, 255, 255), (wx, wy), int(R * 0.06))
 
-        # --- Rounded hull body ---
-        self._aa_circle(self.screen, HULL,  pt( R * 0.65, 0), int(R * 0.92))
-        self._aa_circle(self.screen, PANEL, pt( 0,         0), int(R * 1.06))
-        self._aa_circle(self.screen, HULL,  pt(-R * 0.65, 0), int(R * 0.86))
-        pygame.gfxdraw.aacircle(self.screen, *pt(0, 0), int(R * 1.06), EDGE)
+        # --- Fuselage — sharp tapered hexagon shape ---
+        # Pointed at nose, narrows at tail; gives a clear "fighter" silhouette.
+        fuselage = [pt(R * 1.15,  R * 0.05),    # nose tip area
+                    pt(R * 0.85,  R * 0.32),    # shoulder
+                    pt(-R * 0.7,  R * 0.42),    # widest aft
+                    pt(-R * 1.2,  R * 0.22),    # tail
+                    pt(-R * 1.2, -R * 0.22),    # tail mirror
+                    pt(-R * 0.7, -R * 0.42),    # shoulder mirror
+                    pt(R * 0.85, -R * 0.32),
+                    pt(R * 1.15, -R * 0.05)]
+        # Shadow under fuselage
+        shadow_fuse = [(p[0] + 2, p[1] + 3) for p in fuselage]
+        pygame.draw.polygon(self.screen, DARK, shadow_fuse)
+        pygame.draw.polygon(self.screen, HULL, fuselage)
+        pygame.gfxdraw.aapolygon(self.screen, fuselage, EDGE)
 
-        # Spine stripe
-        spine_pts = [pt(R * 1.6,  R * 0.1), pt(-R * 0.8,  R * 0.1),
-                     pt(-R * 0.8, -R * 0.1), pt(R * 1.6,  -R * 0.1)]
-        pygame.draw.polygon(self.screen, SPINE, spine_pts)
+        # Hull center panel (lighter strip down the middle — catches light)
+        center_panel = [pt(R * 1.0,   R * 0.18),
+                        pt(-R * 0.95, R * 0.28),
+                        pt(-R * 0.95, -R * 0.28),
+                        pt(R * 1.0,  -R * 0.18)]
+        pygame.draw.polygon(self.screen, PANEL, center_panel)
+        pygame.gfxdraw.aapolygon(self.screen, center_panel, EDGE)
 
-        # Hull panel seam lines
-        pygame.draw.aaline(self.screen, AMBER2, pt(R * 0.3,  R * 0.85), pt(-R * 0.55, R * 0.70))
-        pygame.draw.aaline(self.screen, AMBER2, pt(R * 0.3, -R * 0.85), pt(-R * 0.55, -R * 0.70))
+        # Bright spine highlight (the top ridge of the fuselage)
+        pygame.draw.aaline(self.screen, SPINE,
+                           pt(R * 1.1, -R * 0.04), pt(-R * 1.15, -R * 0.04))
+        # Lower shadow line
+        pygame.draw.aaline(self.screen, DARK,
+                           pt(R * 1.1, R * 0.04), pt(-R * 1.15, R * 0.04))
 
-        # --- Nose cone ---
-        self._aa_circle(self.screen, SPINE,           pt(R * 1.5, 0), int(R * 0.42))
-        self._aa_circle(self.screen, (100, 115, 145), pt(R * 1.82, 0), int(R * 0.20))
-        # amber nose ring
-        pygame.gfxdraw.aacircle(self.screen, *pt(R * 1.5, 0), int(R * 0.42), AMBER)
+        # Amber accent stripes along the fuselage shoulder
+        pygame.draw.aaline(self.screen, AMBER, pt(R * 0.85,  R * 0.30), pt(-R * 0.65, R * 0.40))
+        pygame.draw.aaline(self.screen, AMBER, pt(R * 0.85, -R * 0.30), pt(-R * 0.65, -R * 0.40))
 
-        # --- Cannon barrel ---
-        barrel = [pt(R * 1.22,  R * 0.13), pt(R * 2.5,  R * 0.09),
-                  pt(R * 2.5,  -R * 0.09), pt(R * 1.22, -R * 0.13)]
+        # --- Sharp pointed nose cone ---
+        nose = [pt(R * 1.55, 0),                # tip
+                pt(R * 1.15, R * 0.18),
+                pt(R * 1.15, -R * 0.18)]
+        pygame.draw.polygon(self.screen, PANEL, nose)
+        pygame.gfxdraw.aapolygon(self.screen, nose, AMBER)
+        # Amber nose stripe
+        pygame.draw.aaline(self.screen, AMBER,
+                           pt(R * 1.55, 0), pt(R * 1.15, 0))
+
+        # --- Cannon barrel — clearly separated from hull ---
+        # Barrel base (cylinder collar attached to hull)
+        collar = [pt(R * 1.15,  R * 0.18), pt(R * 1.40,  R * 0.14),
+                  pt(R * 1.40, -R * 0.14), pt(R * 1.15, -R * 0.18)]
+        pygame.draw.polygon(self.screen, SPINE, collar)
+        pygame.gfxdraw.aapolygon(self.screen, collar, AMBER)
+        # Main barrel
+        barrel = [pt(R * 1.40,  R * 0.13), pt(R * 1.95,  R * 0.10),
+                  pt(R * 1.95, -R * 0.10), pt(R * 1.40, -R * 0.13)]
         pygame.draw.polygon(self.screen, PANEL, barrel)
         pygame.gfxdraw.aapolygon(self.screen, barrel, AMBER)
-        # barrel top highlight — makes it look cylindrical
-        pygame.draw.aaline(self.screen, (90, 105, 130),
-                           pt(R * 1.3, -R * 0.06), pt(R * 2.45, -R * 0.04))
-        # muzzle cap — finished barrel end
-        self._aa_circle(self.screen, SPINE, pt(R * 2.5, 0), int(R * 0.13))
-        pygame.gfxdraw.aacircle(self.screen, *pt(R * 2.5, 0), int(R * 0.13), AMBER)
+        # Barrel cylindrical highlight
+        pygame.draw.aaline(self.screen, SPINE,
+                           pt(R * 1.45, -R * 0.07), pt(R * 1.90, -R * 0.06))
+        pygame.draw.aaline(self.screen, DARK,
+                           pt(R * 1.45,  R * 0.07), pt(R * 1.90,  R * 0.06))
+        # Muzzle cap
+        self._aa_circle(self.screen, SPINE, pt(R * 1.95, 0), int(R * 0.14))
+        pygame.gfxdraw.aacircle(self.screen, *pt(R * 1.95, 0), int(R * 0.14), AMBER)
+        # Muzzle inner dark hole
+        self._aa_circle(self.screen, DARK, pt(R * 1.95, 0), int(R * 0.07))
 
-        # --- Visor (flat viewport slit, NOT ball-shaped) ---
-        visor = [pt(R * 0.9,  R * 0.28), pt(R * 0.3,  R * 0.28),
-                 pt(R * 0.3, -R * 0.28), pt(R * 0.9, -R * 0.28)]
-        pygame.draw.polygon(self.screen, (8, 12, 22), visor)
-        # amber visor frame
-        pygame.gfxdraw.aapolygon(self.screen, visor, AMBER)
-        # cyan scan-line inside
-        pygame.draw.aaline(self.screen, (0, 200, 230),
-                           pt(R * 0.85, R * 0.05), pt(R * 0.35, R * 0.05))
-
-        # --- Amber hull accent rings ---
-        pygame.gfxdraw.aacircle(self.screen, *pt(-R * 0.3, 0), int(R * 0.3), AMBER2)
+        # --- Cockpit canopy — prominent glowing dome ---
+        # Outer dark frame
+        canopy_frame = [pt(R * 0.95,  R * 0.32), pt(R * 0.25,  R * 0.32),
+                        pt(R * 0.25, -R * 0.32), pt(R * 0.95, -R * 0.32)]
+        pygame.draw.polygon(self.screen, DARK, canopy_frame)
+        # Inner glass
+        canopy_glass = [pt(R * 0.90,  R * 0.26), pt(R * 0.30,  R * 0.26),
+                        pt(R * 0.30, -R * 0.26), pt(R * 0.90, -R * 0.26)]
+        pygame.draw.polygon(self.screen, (15, 30, 50), canopy_glass)
+        pygame.gfxdraw.aapolygon(self.screen, canopy_glass, CYAN)
+        # Glass highlights — diagonal sweeps suggest curved glass
+        pygame.draw.aaline(self.screen, (120, 200, 255),
+                           pt(R * 0.85, R * 0.22), pt(R * 0.55, R * 0.05))
+        pygame.draw.aaline(self.screen, (200, 240, 255),
+                           pt(R * 0.85, R * 0.18), pt(R * 0.65, R * 0.05))
+        # Canopy frame outline
+        pygame.gfxdraw.aapolygon(self.screen, canopy_frame, AMBER)
 
         # --- Magazine bay — next ball recessed in hull ---
         bx, by = pt(-R * 0.65, 0)
@@ -468,7 +533,7 @@ class Renderer:
             self._draw_ball(self.screen, frog.next_ball.color, bx, by, int(BALL_RADIUS * 0.58))
 
         # --- Current ball at cannon tip ---
-        mx, my = pt(R * 2.5 + BALL_RADIUS + 1, 0)
+        mx, my = pt(R * 1.95 + BALL_RADIUS + 1, 0)
         if frog.current_ball.is_bomb:
             self._draw_bomb_ball(self.screen, mx, my, frog.current_ball.radius)
         elif frog.current_ball.is_rainbow:
